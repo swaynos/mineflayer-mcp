@@ -61,6 +61,7 @@ function parseCli() {
         version: { type: "string" },
         stateful: { type: "boolean", default: true },
         stateless: { type: "boolean", default: false },
+        "safe-mode": { type: "boolean", default: true },
         help: { type: "boolean", short: "h" },
       },
       strict: true,
@@ -97,6 +98,7 @@ function parseCli() {
     lockPath: v.lock,
     version: v.version || undefined,
     stateful: !!v.stateful && !v.stateless,
+    safeMode: v["safe-mode"] !== false,
   };
 }
 
@@ -150,6 +152,7 @@ async function main() {
     healthPath: opts.healthPath,
     lockPath: opts.lockPath,
     stateful: opts.stateful,
+    safeMode: opts.safeMode,
     pid: process.pid,
   });
 
@@ -201,6 +204,7 @@ async function main() {
     port: opts.mcPort,
     username: opts.username,
     version: opts.version,
+    safeMode: opts.safeMode,
   });
 
   bot.onEnd(({ reason, intentional }) => {

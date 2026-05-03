@@ -45,7 +45,7 @@ end-to-end. If a tool needs its own formal scenario, add one.
 
 ## Milestones
 
-### M1 — Observation (IN PROGRESS)
+### M1 — Observation ✅ COMPLETE (2026-05-03)
 
 **Goal:** An agent can observe the world reliably. No world-writes, no
 movement, no looking-at yet.
@@ -55,11 +55,11 @@ movement, no looking-at yet.
 | Priority | Tool | Status | Why |
 |---|---|---|---|
 | 1 | `read_recent_chat` | ✅ Done (2026-05-03) | Unblocks T1. Tester observes invoker's chat. |
-| 2 | `list_nearby_players` | TODO | Unblocks T2 later. Returns `{ username, position, distance, uuid }` for players within `maxDistance`. |
-| 3 | `get_biome` | TODO | Returns biome name at bot position. Live use surfaced this gap. |
-| 4 | `look_at` / `look_at_player` | TODO | Two tools: `look_at { x, y, z }` and `look_at_player { username }`. Uses `bot.lookAt(Vec3)`. |
-| 5 | `get_health` / `get_food` | TODO | One tool: `get_health` returning `{ health, food, saturation }`. Bot is dying silently to Husks; agent needs visibility. |
-| 6 | `list_nearby_entities` | TODO | Returns `{ type, name, position, distance, isHostile }` for entities within `maxDistance`. Precondition for mob-awareness. |
+| 2 | `list_nearby_players` | ✅ Done (2026-05-03) | Unblocks T2 later. Returns `{ username, position, distance, uuid }` for players within `maxDistance`. |
+| 3 | `get_biome` | ✅ Done (2026-05-03) | Returns biome name at bot position. Live use surfaced this gap. |
+| 4 | `look_at` / `look_at_player` | ✅ Done (2026-05-03) | Two tools: `look_at { x, y, z }` and `look_at_player { username }`. Uses `bot.lookAt(Vec3)`. |
+| 5 | `get_health` / `get_food` | ✅ Done (2026-05-03) | One tool: `get_health` returning `{ health, food, saturation }`. Bot is dying silently to Husks; agent needs visibility. |
+| 6 | `list_nearby_entities` | ✅ Done (2026-05-03) | Returns `{ type, name, position, distance, isHostile }` for entities within `maxDistance`. Precondition for mob-awareness. |
 
 **M1 in-scope behaviors:**
 
@@ -96,11 +96,7 @@ to stabilize the test environment. Safety is M4's problem.
 
 ---
 
-### M2 — Movement
-
-**Goal:** An agent can navigate the world.
-
-**Prerequisite:** M1 complete.
+### M2 — Movement ✅ COMPLETE (2026-05-03)
 
 **Tools to build:**
 
@@ -126,12 +122,7 @@ to stabilize the test environment. Safety is M4's problem.
 
 ---
 
-### M3 — World-write
-
-**Goal:** An agent can modify the world using mineflayer-native APIs — never
-via chat commands. No `/fill`, no `/setblock` through `chat`.
-
-**Prerequisite:** M2 complete.
+### M3 — World-write ✅ COMPLETE (2026-05-03)
 
 **Tools to build:**
 
@@ -158,11 +149,7 @@ via chat commands. No `/fill`, no `/setblock` through `chat`.
 
 ---
 
-### M4 — Bot safety
-
-**Goal:** The bot survives hostile environments without manual intervention.
-
-**Prerequisite:** M3 complete.
+### M4 — Bot safety ✅ COMPLETE (2026-05-03)
 
 **Behaviors to implement (in `src/bot.js`):**
 
@@ -190,12 +177,7 @@ via chat commands. No `/fill`, no `/setblock` through `chat`.
 
 ---
 
-### M5 — Resource surface
-
-**Goal:** Observable world state is available as MCP resources, not just tools.
-Resources are read-only; tools are side-effectful.
-
-**Prerequisite:** M4 complete.
+### M5 — Resource surface ✅ COMPLETE (2026-05-03)
 
 **Resources to implement:**
 
@@ -265,5 +247,5 @@ See `test/README.md` for the full testing methodology.
 | Scenario | File | Unblocked by | Status |
 |---|---|---|---|
 | T1 — Chat | `test/scenarios/T1-chat.md` | `read_recent_chat` (M1) | ✅ **PASS** (2026-05-03) |
-| T2 — Presence | `test/scenarios/T2-presence.md` | `navigate_to`, `list_nearby_players` (M2) | Blocked |
-| T3 — World-write | `test/scenarios/T3-world-write.md` | `place_block` (M3) | Blocked |
+| T2 — Presence | `test/scenarios/T2-presence.md` | `navigate_to`, `list_nearby_players` (M2) | ✅ **PASS** (2026-05-03) |
+| T3 — World-write | `test/scenarios/T3-world-write.md` | `place_block` (M3) | ✅ **PASS** (2026-05-03) |

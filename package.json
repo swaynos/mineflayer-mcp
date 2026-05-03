@@ -17,6 +17,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "mineflayer": "^4.37.0",
+    "mineflayer-pathfinder": "^2.4.5",
     "zod": "^3.23.8"
   }
 }

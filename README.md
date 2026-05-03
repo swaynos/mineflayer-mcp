@@ -31,77 +31,96 @@ advertised ten tools but dispatched only four, destroyed error codes via
 
 ## What works today
 
-The current `src/` implements a **minimum viable** MCP server sufficient to
-prove the architecture end-to-end:
+All milestones M1–M5 complete as of 2026-05-03. The current `src/` implements a
+full-featured MCP server validated end-to-end against a live Minecraft 1.21.1
+server using the two-instance invoker/tester harness. See `SPEC.md` and `test/`
+for the full test methodology and evidence.
 
-| Tool | Status |
+### Tools (18)
+
+| Tool | Description |
 |---|---|
-| `chat` | Works |
-| `get_position` | Works |
-| `find_blocks` | Works |
-| `inspect_inventory` | Works |
+| `chat` | Send a chat message in-world |
+| `get_position` | Bot coordinates, dimension, yaw, pitch |
+| `find_blocks` | Locate nearby blocks by type |
+| `inspect_inventory` | List inventory contents |
+| `read_recent_chat` | Return buffered chat since a timestamp |
+| `list_nearby_players` | Players near the bot with positions |
+| `get_biome` | Biome at bot's current position |
+| `look_at` | Rotate head to face a coordinate |
+| `look_at_player` | Rotate head to face a named player |
+| `get_health` | Health, food, saturation |
+| `list_nearby_entities` | Entities with hostile flag and distance |
+| `navigate_to` | Pathfind to absolute coordinate |
+| `navigate_relative` | Pathfind by relative offset |
+| `get_time_of_day` | In-game time and phase |
+| `get_weather` | Current weather state |
+| `place_block` | Place held item as block (mineflayer-native) |
+| `dig_block` | Break a block (mineflayer-native) |
+| `use_item` | Activate held item |
 
-Key properties already in place:
+### Resources (6)
 
-- `assertCompleteness()` in `src/tools.js` — fails startup if advertised tools ≠ dispatched tools.
-- `normalizeError()` in `src/errors.js` — never returns `[object Object]`.
-- Spawn-gate and chunk-load-gate in `src/bot.js` before any world query.
+| URI | Content |
+|---|---|
+| `minecraft://position` | Bot coordinates |
+| `minecraft://inventory` | Current inventory |
+| `minecraft://health` | Health, food, saturation |
+| `minecraft://blocks/nearby` | Nearby block scan |
+| `minecraft://players/nearby` | Nearby player list |
+| `minecraft://chat/recent` | Recent chat buffer |
+
+### Scenarios passed
+
+| Scenario | What it proves |
+|---|---|
+| T1 — Chat | P1 sends; P2 observes via `read_recent_chat`; RCON confirms |
+| T2 — Presence | P1 navigates; P2 sees P1 in `list_nearby_players`; RCON confirms coords |
+| T3 — World-write | P1 places stone; P2 finds it via `find_blocks`; RCON confirms |
+
+### Bot safety (M4)
+
+With `--safe-mode` (default on):
+- Auto-respawn on death (`bot.on("death")` → `bot.respawn()`)
+- Fall protection (velocity-based jump)
+- Mob avoidance at health < 10 (pathfind away from nearest hostile)
+- Real-time health logging
+
+Validated: bot survived 5 minutes in a Husk-populated world, 1 death, auto-respawned.
+
+Key properties:
+
+- `assertCompleteness()` — fails startup if advertised tools ≠ dispatched tools.
+- `normalizeError()` — never returns `[object Object]`.
+- Spawn-gate and chunk-load-gate before world queries.
 - No auto-reconnect; process exits, systemd owns restart.
-- Single-instance PID lockfile (`src/lock.js`).
-- Shared singleton bot across concurrent MCP sessions (`src/http.js`).
+- Single-instance PID lockfile.
+- Shared singleton bot across concurrent MCP sessions.
 
 ---
 
 ## What is missing
 
-To become high quality, this project needs (roughly in priority order):
+The core tool and resource surface is complete. Remaining work:
 
-**Tool surface**
-- Movement: `navigate_to`, `navigate_relative`, `look_at`, `look_at_player`.
-- World edit: `dig_block`, `place_block`, `use_item`.
-- Observation: `get_biome`, `list_nearby_entities`, `list_nearby_players`,
-  `get_time_of_day`, `get_weather`, `get_health`, `get_food`.
-- Chat: `read_recent_chat` — returns buffered chat lines since a given timestamp.
-  **Required for the two-instance test harness (Tier 1 scenario).**
-- Inventory actions: `equip_item`, `drop_item`, `craft_item`, `open_container`.
-
-**Resource surface**
-- `minecraft://position`, `minecraft://inventory`, `minecraft://blocks/nearby`,
-  `minecraft://players/nearby`, `minecraft://biome`, `minecraft://health`.
-- Read-only observable state, separate from side-effectful tools.
-
-**Bot quality**
-- Fall protection, mob avoidance, auto-respawn (toggleable via `--safe-mode`).
-- Pathfinder integration (`mineflayer-pathfinder`) for reliable movement.
-- Chunk-aware scanning that doesn't silently return empty because chunks aren't loaded.
-
-**Agent-trust hardening**
-- Every tool returns structured evidence of effect (not just a success flag).
-- Tools that can fail partially (e.g., `navigate_to` giving up) return progress.
-- Clear distinction between "tool ran and nothing happened" vs. "tool couldn't run."
-- No chat-as-command paths — all world edits go through mineflayer APIs, never
-  through sending `/fill` or `/setblock` as chat.
-
-**Operational**
 **Testing**
-- Two-instance test harness: two local `mineflayer-mcp` processes (`MathTest-P1`
-  on `:18080`, `MathTest-P2` on `:18081`) connect to the same world simultaneously.
-  One acts as the **invoker** (performs the action), the other as the **tester**
-  (independently observes the result). RCON is the authoritative oracle.
-  - Tier 1: `chat` invoker / `read_recent_chat` tester. Unblocked once
-    `read_recent_chat` exists.
-  - Tier 2: `navigate_to` invoker / `list_nearby_players` tester.
-  - Tier 3: `place_block` invoker / `find_blocks` tester + RCON confirm.
 - CI test suite that runs against a throwaway Minecraft container.
+- Fix macOS smoke-test bug (D-1, minecraft-protocol handshake) so tests run locally without `nyx`.
 - Versioned tool schemas with a compatibility policy.
+
+**Publishing**
 - Published npm package (`mineflayer-mcp`) with documented public API.
-- Stdio smoke test that works cross-platform (current one fails on macOS).
-- Configurable via env vars, not just CLI flags.
+- Configurable via env vars in addition to CLI flags.
 
 **Docs**
 - Tool-by-tool reference with examples.
 - Agent-authoring guide: how to design prompts that use these tools well.
 - Deployment recipes for stdio, streamable-http, and behind a gateway.
+
+**Tool additions (future)**
+- Inventory actions: `equip_item`, `drop_item`, `craft_item`, `open_container`.
+- Extended observation: `list_nearby_items`, `get_block_info`.
+- Extended movement: `stop_navigation`, `follow_player`.
 
 ---
 

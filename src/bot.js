@@ -3,6 +3,8 @@
 // No auto-reconnect. Systemd (or the parent process) owns restart policy.
 
 import mineflayer from "mineflayer";
+import pkg from "mineflayer-pathfinder";
+const { pathfinder, Movements, goals } = pkg;
 import { McpError, ErrorCodes, normalizeError } from "./errors.js";
 import { logger } from "./logger.js";
 
@@ -22,14 +24,15 @@ function formatReason(reason) {
 }
 
 export class Bot {
-  constructor({ host, port, username, version }) {
+  constructor({ host, port, username, version, safeMode = true }) {
     if (!host) throw new McpError(ErrorCodes.SERVER_STARTUP, "Bot: missing host");
     if (!port) throw new McpError(ErrorCodes.SERVER_STARTUP, "Bot: missing port");
     if (!username) throw new McpError(ErrorCodes.SERVER_STARTUP, "Bot: missing username");
     this._host = host;
     this._port = Number(port);
     this._username = username;
-    this._version = version ?? false; // mineflayer auto-detects when falsy
+    this._version = version ?? false;
+    this._safeMode = Boolean(safeMode);
     /** @type {import("mineflayer").Bot | null} */
     this._bot = null;
     this._spawned = false;
@@ -39,9 +42,12 @@ export class Bot {
     this._mcData = null;
 
     // Chat ring buffer — capped at 100 entries.
-    // Each entry: { timestamp: number (ms), username: string|null, message: string, type: string }
     this._chatBuffer = [];
     this._chatBufferMax = 100;
+
+    // Safety state
+    this._safetyInterval = null;
+    this._lastHealth = null;
   }
 
   isSpawned() {
@@ -90,9 +96,10 @@ export class Bot {
       checkTimeoutInterval: 30_000,
       hideErrors: false,
     });
+    bot.loadPlugin(pathfinder);
     this._bot = bot;
 
-    return await new Promise((resolve, reject) => {
+    await new Promise((resolve, reject) => {
       let settled = false;
       const settleResolve = () => {
         if (settled) return;
@@ -152,7 +159,6 @@ export class Bot {
       bot.once("spawn", () => {
         this._spawned = true;
         try {
-          // minecraft-data is available via require; lazy-load per version
           const mcDataModule = bot.registry || null;
           this._mcData = mcDataModule;
         } catch {
@@ -184,19 +190,13 @@ export class Bot {
           this._emitEnd(this._disconnectReason);
         });
 
-        // Chat buffer — capture all incoming messages via the `message` event.
-        // On vanilla 1.21.1, `message` fires for all chat/system text;
-        // `chat` and `messageStr` do NOT fire reliably on this version.
+        // Chat buffer
         bot.on("message", (chatMsg, position) => {
           const str = chatMsg.toString();
           let username = null;
           let message = str;
-          // Parse vanilla chat format: "<username> text"
           const m = str.match(/^<([^>]+)>\s(.+)$/);
-          if (m) {
-            username = m[1];
-            message = m[2];
-          }
+          if (m) { username = m[1]; message = m[2]; }
           this._pushChatEntry({
             timestamp: Date.now(),
             username,
@@ -205,9 +205,92 @@ export class Bot {
           });
         });
 
+        // M4: Safety behaviors (only when safeMode is on).
+        if (this._safeMode) {
+          // Auto-respawn on death.
+          bot.on("death", () => {
+            logger.warn("bot.safety.death", { username: this._username });
+            setTimeout(() => {
+              try { bot.respawn(); } catch (e) {
+                logger.warn("bot.safety.respawn.failed", { err: String(e?.message ?? e) });
+              }
+            }, 1000);
+          });
+
+          // Health tracking — log on change.
+          bot.on("health", () => {
+            const h = bot.health ?? null;
+            if (h !== this._lastHealth) {
+              logger.info("bot.safety.health", { health: h, food: bot.food ?? null });
+              this._lastHealth = h;
+            }
+          });
+
+          // Fall protection — jump if falling fast.
+          this._safetyInterval = setInterval(() => {
+            if (!this._spawned || this._disconnected || !bot.entity) return;
+            const vy = bot.entity.velocity?.y ?? 0;
+            if (vy < -0.5) {
+              try { bot.setControlState("jump", true); } catch { /* ignore */ }
+            } else {
+              try { bot.setControlState("jump", false); } catch { /* ignore */ }
+            }
+          }, 250);
+
+          // Mob avoidance — if health < 10, navigate away from nearest hostile.
+          bot.on("health", () => {
+            if (!this._spawned || this._disconnected) return;
+            const h = bot.health ?? 20;
+            if (h < 10 && this._movements && bot.pathfinder) {
+              try {
+                const hostile = Object.values(bot.entities ?? {})
+                  .filter(e => e && e.id !== bot.entity?.id)
+                  .map(e => {
+                    const name = (e.name ?? "").toLowerCase();
+                    const HOSTILE = ["zombie","skeleton","creeper","spider","husk","stray","drowned","phantom","pillager","ravager","vex","vindicator","evoker","warden","breeze"];
+                    const pos = e.position;
+                    if (!HOSTILE.some(h => name.includes(h)) || !pos) return null;
+                    const dx = pos.x - bot.entity.position.x;
+                    const dz = pos.z - bot.entity.position.z;
+                    return { dist: Math.sqrt(dx*dx + dz*dz), pos };
+                  })
+                  .filter(Boolean)
+                  .sort((a, b) => a.dist - b.dist)[0];
+
+                if (hostile && hostile.dist < 8) {
+                  const away = {
+                    x: bot.entity.position.x - (hostile.pos.x - bot.entity.position.x) * 4,
+                    y: bot.entity.position.y,
+                    z: bot.entity.position.z - (hostile.pos.z - bot.entity.position.z) * 4,
+                  };
+                  const { GoalNear } = goals;
+                  bot.pathfinder.goto(new GoalNear(away.x, away.y, away.z, 1)).catch(() => {});
+                  logger.warn("bot.safety.flee", { from: hostile.pos, health: h });
+                }
+              } catch { /* ignore — safety never crashes the bot */ }
+            }
+          });
+
+          logger.info("bot.safety.enabled", { username: this._username });
+        }
+
         settleResolve();
       });
     });
+
+    // Initialise pathfinder movements now that spawn has completed.
+    // Movements requires the real mineflayer bot's registry — use bot directly
+    // rather than constructing a separate minecraft-data instance.
+    try {
+      const movements = new Movements(bot);
+      movements.allowSprinting = false;
+      bot.pathfinder.setMovements(movements);
+      this._movements = movements;
+      logger.info("bot.pathfinder.ready", { version: bot.version });
+    } catch (e) {
+      logger.warn("bot.pathfinder.init.failed", { err: String(e?.message ?? e) });
+      this._movements = null;
+    }
   }
 
   _assertSpawned() {
@@ -423,15 +506,433 @@ export class Bot {
     return filtered.slice(-limitN);
   }
 
+  // ---------- M1-P2: list_nearby_players ----------
+
+  listNearbyPlayers({ maxDistance = 64 } = {}) {
+    this._assertSpawned();
+    const bot = this._bot;
+    const origin = bot.entity?.position;
+    if (!origin) throw new McpError(ErrorCodes.INTERNAL, "Minecraft: bot position not available");
+    const maxD = Math.max(1, Math.min(256, Number(maxDistance) || 64));
+    const out = [];
+    try {
+      for (const [name, player] of Object.entries(bot.players ?? {})) {
+        if (name === bot.username) continue; // exclude self
+        const pos = player.entity?.position;
+        if (!pos) continue; // player in tab-list but entity not loaded
+        const dx = pos.x - origin.x;
+        const dy = pos.y - origin.y;
+        const dz = pos.z - origin.z;
+        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (distance > maxD) continue;
+        out.push({
+          username: name,
+          uuid: player.uuid ?? null,
+          position: { x: pos.x, y: pos.y, z: pos.z },
+          distance: Number(distance.toFixed(3)),
+          ping: typeof player.ping === "number" ? player.ping : null,
+          gamemode: typeof player.gamemode === "number" ? player.gamemode : null,
+        });
+      }
+      out.sort((a, b) => a.distance - b.distance);
+      return out;
+    } catch (err) {
+      const n = normalizeError(err, "Minecraft: list_nearby_players failed");
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  // ---------- M1-P3: get_biome ----------
+
+  getBiome() {
+    this._assertSpawned();
+    const bot = this._bot;
+    try {
+      const pos = bot.entity?.position;
+      if (!pos) throw new McpError(ErrorCodes.INTERNAL, "Minecraft: bot position not available");
+      const biomeId = bot.world?.getBiome?.(pos);
+      let biomeName = null;
+      if (typeof biomeId === "number") {
+        // minecraft-data registry lookup
+        const reg = bot.registry;
+        const biome = reg?.biomes?.[biomeId] ?? null;
+        biomeName = biome?.name ?? `biome_${biomeId}`;
+      }
+      return {
+        biome: biomeName,
+        biomeId: typeof biomeId === "number" ? biomeId : null,
+        position: { x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z) },
+      };
+    } catch (err) {
+      if (err instanceof McpError) throw err;
+      const n = normalizeError(err, "Minecraft: get_biome failed");
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  // ---------- M1-P4: look_at / look_at_player ----------
+
+  async lookAt({ x, y, z, force = false } = {}) {
+    this._assertSpawned();
+    const bot = this._bot;
+    try {
+      const { Vec3 } = await import("vec3");
+      const target = new Vec3(Number(x), Number(y), Number(z));
+      await bot.lookAt(target, force);
+      const yaw = bot.entity?.yaw ?? null;
+      const pitch = bot.entity?.pitch ?? null;
+      return { yaw, pitch, target: { x: Number(x), y: Number(y), z: Number(z) } };
+    } catch (err) {
+      if (err instanceof McpError) throw err;
+      const n = normalizeError(err, "Minecraft: look_at failed");
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  async lookAtPlayer({ username, atFeet = false } = {}) {
+    this._assertSpawned();
+    const bot = this._bot;
+    const player = bot.players?.[username];
+    if (!player) {
+      throw new McpError(ErrorCodes.INVALID_PARAMS, `look_at_player: player "${username}" not found`);
+    }
+    const pos = player.entity?.position;
+    if (!pos) {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        `look_at_player: player "${username}" entity not loaded (too far?)`
+      );
+    }
+    // Aim at eye level (1.62 blocks above feet) unless atFeet is true.
+    const targetY = atFeet ? pos.y : pos.y + 1.62;
+    return this.lookAt({ x: pos.x, y: targetY, z: pos.z });
+  }
+
+  // ---------- M1-P5: get_health ----------
+
+  getHealth() {
+    this._assertSpawned();
+    const bot = this._bot;
+    try {
+      return {
+        health: typeof bot.health === "number" ? bot.health : null,
+        food: typeof bot.food === "number" ? bot.food : null,
+        saturation: typeof bot.foodSaturation === "number" ? bot.foodSaturation : null,
+        alive: bot.health > 0,
+      };
+    } catch (err) {
+      const n = normalizeError(err, "Minecraft: get_health failed");
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  // ---------- M1-P6: list_nearby_entities ----------
+
+  listNearbyEntities({ maxDistance = 16 } = {}) {
+    this._assertSpawned();
+    const bot = this._bot;
+    const origin = bot.entity?.position;
+    if (!origin) throw new McpError(ErrorCodes.INTERNAL, "Minecraft: bot position not available");
+    const maxD = Math.max(1, Math.min(64, Number(maxDistance) || 16));
+
+    // Hostile mob types for vanilla 1.21.x
+    const HOSTILE = new Set([
+      "zombie", "skeleton", "creeper", "spider", "cave_spider", "witch",
+      "enderman", "blaze", "ghast", "slime", "magma_cube", "husk",
+      "stray", "drowned", "phantom", "pillager", "ravager", "vex",
+      "vindicator", "evoker", "shulker", "elder_guardian", "guardian",
+      "wither_skeleton", "warden", "breeze",
+    ]);
+
+    try {
+      const out = [];
+      for (const entity of Object.values(bot.entities ?? {})) {
+        if (!entity || entity.id === bot.entity?.id) continue; // skip self
+        const pos = entity.position;
+        if (!pos) continue;
+        const dx = pos.x - origin.x;
+        const dy = pos.y - origin.y;
+        const dz = pos.z - origin.z;
+        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (distance > maxD) continue;
+        const type = entity.name ?? entity.type ?? "unknown";
+        out.push({
+          id: entity.id ?? null,
+          type,
+          displayName: entity.displayName ?? null,
+          username: entity.username ?? null,
+          position: { x: pos.x, y: pos.y, z: pos.z },
+          distance: Number(distance.toFixed(3)),
+          isHostile: HOSTILE.has(type.toLowerCase()),
+          health: typeof entity.health === "number" ? entity.health : null,
+        });
+      }
+      out.sort((a, b) => a.distance - b.distance);
+      return out;
+    } catch (err) {
+      const n = normalizeError(err, "Minecraft: list_nearby_entities failed");
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  // ---------- M2-P1: navigate_to ----------
+
+  async navigateTo({ x, y, z, tolerance = 1, timeoutMs = 30000 } = {}) {
+    this._assertSpawned();
+    const bot = this._bot;
+    if (!bot.pathfinder) {
+      throw new McpError(ErrorCodes.INTERNAL, "navigate_to: pathfinder not loaded");
+    }
+    if (!this._movements) {
+      throw new McpError(ErrorCodes.INTERNAL, "navigate_to: pathfinder movements not initialised");
+    }
+    const tx = Number(x), ty = Number(y), tz = Number(z);
+    if (!Number.isFinite(tx) || !Number.isFinite(ty) || !Number.isFinite(tz)) {
+      throw new McpError(ErrorCodes.INVALID_PARAMS, "navigate_to: x, y, z must be finite numbers");
+    }
+    try {
+      const goal = new goals.GoalNear(tx, ty, tz, Math.max(0, Number(tolerance) || 1));
+      // Enforce timeout — pathfinder has no native timeout.
+      await Promise.race([
+        bot.pathfinder.goto(goal),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`navigate_to: timed out after ${timeoutMs}ms`)), timeoutMs)
+        ),
+      ]);
+      const pos = bot.entity.position;
+      return {
+        reached: true,
+        position: {
+          x: Number(pos.x.toFixed(3)),
+          y: Number(pos.y.toFixed(3)),
+          z: Number(pos.z.toFixed(3)),
+        },
+        target: { x: tx, y: ty, z: tz },
+      };
+    } catch (err) {
+      // Stop pathfinder so the bot doesn't keep trying after timeout.
+      try { bot.pathfinder.stop(); } catch { /* ignore */ }
+      if (err instanceof McpError) throw err;
+      const n = normalizeError(err, "Minecraft: navigate_to failed");
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  // ---------- M2-P2: navigate_relative ----------
+
+  async navigateRelative({ dx, dy, dz, tolerance = 1, timeoutMs = 30000 } = {}) {
+    this._assertSpawned();
+    const pos = this._bot.entity?.position;
+    if (!pos) throw new McpError(ErrorCodes.INTERNAL, "navigate_relative: bot position not available");
+    return this.navigateTo({
+      x: pos.x + Number(dx),
+      y: pos.y + Number(dy),
+      z: pos.z + Number(dz),
+      tolerance,
+      timeoutMs,
+    });
+  }
+
+  // ---------- M2-P3: get_time_of_day / get_weather ----------
+
+  getTimeOfDay() {
+    this._assertSpawned();
+    const bot = this._bot;
+    try {
+      const timeOfDay = bot.time?.timeOfDay ?? null;
+      const age = bot.time?.age ?? null;
+      // timeOfDay 0=sunrise, 6000=noon, 12000=sunset, 18000=midnight
+      let phase = null;
+      if (timeOfDay !== null) {
+        if (timeOfDay < 1000) phase = "sunrise";
+        else if (timeOfDay < 6000) phase = "morning";
+        else if (timeOfDay < 8000) phase = "noon";
+        else if (timeOfDay < 12000) phase = "afternoon";
+        else if (timeOfDay < 13000) phase = "sunset";
+        else if (timeOfDay < 18000) phase = "night";
+        else if (timeOfDay < 22000) phase = "midnight";
+        else phase = "late_night";
+      }
+      return { timeOfDay, age, phase, isDay: timeOfDay !== null ? timeOfDay < 12000 : null };
+    } catch (err) {
+      const n = normalizeError(err, "Minecraft: get_time_of_day failed");
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  getWeather() {
+    this._assertSpawned();
+    const bot = this._bot;
+    try {
+      const isRaining = bot.isRaining ?? false;
+      const thunderState = bot.thunderState ?? 0;
+      let weather = "clear";
+      if (thunderState > 0.5) weather = "thunder";
+      else if (isRaining) weather = "rain";
+      return { weather, isRaining, thunderState };
+    } catch (err) {
+      const n = normalizeError(err, "Minecraft: get_weather failed");
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  // ---------- M3-P1: place_block ----------
+
+  async placeBlock({ dx, dy, dz } = {}) {
+    this._assertSpawned();
+    const bot = this._bot;
+    const origin = bot.entity?.position;
+    if (!origin) throw new McpError(ErrorCodes.INTERNAL, "place_block: bot position not available");
+
+    const { Vec3 } = await import("vec3");
+    const targetPos = new Vec3(
+      Math.floor(origin.x) + Number(dx),
+      Math.floor(origin.y) + Number(dy),
+      Math.floor(origin.z) + Number(dz)
+    );
+
+    // Auto-equip: find a placeable block item anywhere in inventory and equip it.
+    // In creative mode, bot.inventory.items() may be stale — also check quickBarSlot.
+    const inv = bot.inventory;
+    let itemToPlace = null;
+
+    // Prefer item already in hand if there is one.
+    const inHand = inv?.slots?.[bot.quickBarSlot] ?? null;
+    if (inHand && inHand.name !== "air") {
+      itemToPlace = inHand;
+    } else {
+      for (const item of inv?.items() ?? []) {
+        if (item && item.name !== "air") {
+          itemToPlace = item;
+          break;
+        }
+      }
+    }
+    if (!itemToPlace) {
+      throw new McpError(ErrorCodes.INVALID_PARAMS, "place_block: inventory is empty");
+    }
+    try {
+      await bot.equip(itemToPlace, "hand");
+    } catch (err) {
+      // equip can fail in creative mode — if there's already something in hand, proceed anyway.
+      const stillInHand = inv?.slots?.[bot.quickBarSlot];
+      if (!stillInHand) {
+        const n = normalizeError(err, "place_block: equip failed");
+        throw new McpError(n.code, n.message, n.data);
+      }
+      itemToPlace = stillInHand;
+    }
+
+    // Find a solid adjacent block to place against.
+    const faceOffsets = [
+      [0, -1, 0], [0, 1, 0],
+      [1, 0, 0], [-1, 0, 0],
+      [0, 0, 1], [0, 0, -1],
+    ];
+    let referenceBlock = null;
+    let faceVec = null;
+    for (const [fx, fy, fz] of faceOffsets) {
+      const candidate = bot.blockAt(targetPos.offset(fx, fy, fz));
+      if (candidate && candidate.name !== "air" && candidate.name !== "cave_air") {
+        referenceBlock = candidate;
+        faceVec = new Vec3(-fx, -fy, -fz);
+        break;
+      }
+    }
+    if (!referenceBlock) {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        `place_block: no solid adjacent block to place against at offset (${dx},${dy},${dz})`
+      );
+    }
+
+    try {
+      // Use _genericPlace directly to avoid the blockUpdate timeout in 1.21.1.
+      // _genericPlace sends the placement packet; we then verify via blockAt.
+      await bot._genericPlace(referenceBlock, faceVec, { forceLook: "force", swingArm: "right" });
+      // Small wait for server to process.
+      await new Promise((r) => setTimeout(r, 200));
+      const actual = bot.blockAt(targetPos);
+      if (actual && actual.name !== "air" && actual.name !== "cave_air") {
+        return {
+          ok: true,
+          placed: actual.name,
+          position: { x: targetPos.x, y: targetPos.y, z: targetPos.z },
+        };
+      }
+      // Block didn't appear — server rejected placement.
+      throw new McpError(
+        ErrorCodes.INTERNAL,
+        `place_block: server did not confirm placement at (${targetPos.x},${targetPos.y},${targetPos.z}) — ` +
+        `block is "${actual?.name ?? "unknown"}". Check reach distance and that target position is air.`
+      );
+    } catch (err) {
+      if (err instanceof McpError) throw err;
+      const n = normalizeError(err, "Minecraft: place_block failed");
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  // ---------- M3-P2: dig_block ----------
+
+  async digBlock({ dx, dy, dz } = {}) {
+    this._assertSpawned();
+    const bot = this._bot;
+    const origin = bot.entity?.position;
+    if (!origin) throw new McpError(ErrorCodes.INTERNAL, "dig_block: bot position not available");
+
+    const { Vec3 } = await import("vec3");
+    const targetPos = new Vec3(
+      Math.floor(origin.x) + Number(dx),
+      Math.floor(origin.y) + Number(dy),
+      Math.floor(origin.z) + Number(dz)
+    );
+
+    const block = bot.blockAt(targetPos);
+    if (!block || block.name === "air" || block.name === "cave_air") {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        `dig_block: no block to dig at offset (${dx},${dy},${dz}) — found "${block?.name ?? "nothing"}"`
+      );
+    }
+
+    try {
+      await bot.dig(block);
+      return { ok: true, dug: block.name, position: { x: targetPos.x, y: targetPos.y, z: targetPos.z } };
+    } catch (err) {
+      if (err instanceof McpError) throw err;
+      const n = normalizeError(err, "Minecraft: dig_block failed");
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  // ---------- M3-P3: use_item ----------
+
+  async useItem({ hand = "right" } = {}) {
+    this._assertSpawned();
+    const bot = this._bot;
+    const handName = hand === "left" ? "off-hand" : "hand";
+    try {
+      await bot.activateItem(hand === "left");
+      const item = bot.inventory?.slots?.[bot.quickBarSlot] ?? null;
+      return { ok: true, hand, item: item?.name ?? null };
+    } catch (err) {
+      if (err instanceof McpError) throw err;
+      const n = normalizeError(err, `Minecraft: use_item (${handName}) failed`);
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
   disconnect() {
     this._disconnected = true;
+    if (this._safetyInterval) {
+      clearInterval(this._safetyInterval);
+      this._safetyInterval = null;
+    }
     if (this._bot) {
-      try {
-        this._bot.quit?.("shutdown");
-      } catch { /* ignore */ }
-      try {
-        this._bot.end?.();
-      } catch { /* ignore */ }
+      try { this._bot.setControlState?.("jump", false); } catch { /* ignore */ }
+      try { this._bot.quit?.("shutdown"); } catch { /* ignore */ }
+      try { this._bot.end?.(); } catch { /* ignore */ }
     }
   }
 }
