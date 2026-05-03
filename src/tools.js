@@ -60,6 +60,30 @@ export const TOOLS = Object.freeze([
       additionalProperties: false,
     },
   },
+  {
+    name: "read_recent_chat",
+    description:
+      "Return buffered chat messages received since a given timestamp. " +
+      "Useful for observing what other players (or bots) have said in the world. " +
+      "Returns an array of { timestamp, username, message, type }.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        since: {
+          type: "number",
+          description: "Unix epoch milliseconds. Only messages received after this time are returned. Defaults to 0 (all buffered).",
+        },
+        limit: {
+          type: "integer",
+          minimum: 1,
+          maximum: 100,
+          default: 50,
+          description: "Maximum number of messages to return. Defaults to 50.",
+        },
+      },
+      additionalProperties: false,
+    },
+  },
 ]);
 
 // ---------- Zod schemas for argument validation ----------
@@ -75,6 +99,12 @@ export const SCHEMAS = Object.freeze({
     })
     .strict(),
   inspect_inventory: z.object({}).strict(),
+  read_recent_chat: z
+    .object({
+      since: z.number().min(0).default(0),
+      limit: z.number().int().min(1).max(100).default(50),
+    })
+    .strict(),
 });
 
 // ---------- Dispatch ----------
@@ -144,6 +174,17 @@ export async function dispatch(name, rawArgs, bot) {
         ],
       };
     }
+    case "read_recent_chat": {
+      const messages = bot.readRecentChat({ since: args.since, limit: args.limit });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ count: messages.length, messages }),
+          },
+        ],
+      };
+    }
     default:
       // Unreachable given assertCompleteness — still return a proper McpError rather than
       // a raw throw (the upstream mcpmc bug).
@@ -155,7 +196,7 @@ export async function dispatch(name, rawArgs, bot) {
 // The SINGLE guard against the mcpmc bug this project exists to replace.
 // If tools are advertised without dispatch cases (or vice versa), we fail at import time.
 
-const DISPATCHED = new Set(["chat", "get_position", "find_blocks", "inspect_inventory"]);
+const DISPATCHED = new Set(["chat", "get_position", "find_blocks", "inspect_inventory", "read_recent_chat"]);
 
 export function assertCompleteness() {
   const advertised = new Set(TOOLS.map((t) => t.name));

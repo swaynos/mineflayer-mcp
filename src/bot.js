@@ -37,6 +37,11 @@ export class Bot {
     this._disconnectReason = null;
     this._endListeners = new Set();
     this._mcData = null;
+
+    // Chat ring buffer — capped at 100 entries.
+    // Each entry: { timestamp: number (ms), username: string|null, message: string, type: string }
+    this._chatBuffer = [];
+    this._chatBufferMax = 100;
   }
 
   isSpawned() {
@@ -179,6 +184,27 @@ export class Bot {
           this._emitEnd(this._disconnectReason);
         });
 
+        // Chat buffer — capture all incoming messages via the `message` event.
+        // On vanilla 1.21.1, `message` fires for all chat/system text;
+        // `chat` and `messageStr` do NOT fire reliably on this version.
+        bot.on("message", (chatMsg, position) => {
+          const str = chatMsg.toString();
+          let username = null;
+          let message = str;
+          // Parse vanilla chat format: "<username> text"
+          const m = str.match(/^<([^>]+)>\s(.+)$/);
+          if (m) {
+            username = m[1];
+            message = m[2];
+          }
+          this._pushChatEntry({
+            timestamp: Date.now(),
+            username,
+            message,
+            type: position === "chat" ? "chat" : "system",
+          });
+        });
+
         settleResolve();
       });
     });
@@ -213,6 +239,14 @@ export class Bot {
     }
     try {
       this._bot.chat(message);
+      // Buffer outgoing messages too — mineflayer only fires chat/messageStr for
+      // incoming server messages, so we push outgoing ones manually.
+      this._pushChatEntry({
+        timestamp: Date.now(),
+        username: this._username,
+        message,
+        type: "outgoing",
+      });
       return { sent: message };
     } catch (err) {
       const n = normalizeError(err, "Minecraft: chat failed");
@@ -365,6 +399,28 @@ export class Bot {
       const n = normalizeError(err, "Minecraft: inspect_inventory failed");
       throw new McpError(n.code, n.message, n.data);
     }
+  }
+
+  _pushChatEntry(entry) {
+    this._chatBuffer.push(entry);
+    // Keep the ring buffer capped.
+    if (this._chatBuffer.length > this._chatBufferMax) {
+      this._chatBuffer.shift();
+    }
+  }
+
+  /**
+   * Return buffered chat entries since `sinceMs` (epoch ms), up to `limit`.
+   *
+   * @param {{ since?: number, limit?: number }} opts
+   * @returns {Array<{ timestamp: number, username: string|null, message: string, type: string }>}
+   */
+  readRecentChat({ since = 0, limit = 50 } = {}) {
+    this._assertSpawned();
+    const sinceMs = Number(since) || 0;
+    const limitN = Math.max(1, Math.min(100, Number(limit) || 50));
+    const filtered = this._chatBuffer.filter((e) => e.timestamp > sinceMs);
+    return filtered.slice(-limitN);
   }
 
   disconnect() {

@@ -152,6 +152,6 @@ See `test/README.md` for the full testing methodology.
 
 | Scenario | File | Unblocked by | Status |
 |---|---|---|---|
-| T1 — Chat | `test/scenarios/T1-chat.md` | `read_recent_chat` (M1) | Blocked |
+| T1 — Chat | `test/scenarios/T1-chat.md` | `read_recent_chat` (M1) | ✅ **PASS** (2026-05-03) |
 | T2 — Presence | `test/scenarios/T2-presence.md` | `navigate_to`, `list_nearby_players` (M2) | Blocked |
 | T3 — World-write | `test/scenarios/T3-world-write.md` | `place_block` (M3) | Blocked |
