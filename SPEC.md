@@ -1,251 +1,380 @@
-# SPEC.md — mineflayer-mcp Build Plan
+# SPEC.md — mineflayer-mcp Robustness Loop
 
-This file is the implementation contract for `mineflayer-mcp`. It describes
-what gets built, in what order, and how each piece is validated. `README.md`
-is the public face of the project; this file is for the agent and contributors
+This file is the implementation contract for `mineflayer-mcp`. M1–M5 are
+complete (see git history / prior `SPEC.md` for evidence). This spec defines
+the **next phase**: an iterative stress-test loop that hardens the existing
+implementation by generating novel test cases, running them against the live
+Math deployment, documenting any bugs found, fixing them, and repeating.
+
+`README.md` is the public face of the project; this file is for the agent
 doing the work.
 
 ---
 
-## Current focus
+## Current focus — iterative robustness
 
-**Finish M1.** Priority 1 (`read_recent_chat`) is complete. Priorities 2–6
-remain. The agent MUST continue building through the entire M1 tool list
-before advancing to M2. Each tool gets built, wired through
-`assertCompleteness()`, smoke-tested end-to-end against the live Math
-deployment with P1/P2, and documented before the next one begins.
+**Run the loop until 500 iterations complete or a true blocker escalates.
+Do not stop between iterations. Do not expand scope beyond what the
+existing design commitments allow.**
 
-**Do not stop early.** Do not pause for approval between M1 priorities 2
-through 6 unless a tool cannot be built (blocked by upstream mineflayer, a
-runtime error, or a breaking discovery about the Minecraft protocol). Report
-progress; keep going.
-
-**Do not expand scope.** Tools not in the M1 table below are out of scope
-for M1, even if they seem small. If a tempting adjacent tool appears during
-implementation, note it in `opencode/context/MathInstance/progress.md` under
-a new "backlog" entry and keep going on the listed priority.
+Each iteration is atomic, numbered, and permanent. Each iteration's scenario
+file is stored in `opencode/iterations/NNN.md` (gitignored — local context,
+not committed code).
 
 ---
 
-## Guiding principle
+## The loop
 
-Every tool added to `mineflayer-mcp` must be validated by a scenario in
-`test/scenarios/` before it is considered done. The test surface grows in
-lockstep with the tool surface. See `test/README.md` for how testing works.
+For each iteration `N` in `001..500`:
 
-For each M1 tool (priorities 2–6), validation is a minimal end-to-end smoke
-test following the T1 pattern: spin up P1 and/or P2 locally, call the tool,
-cross-check against RCON where applicable, and record the result inline in
-this build session. A full scenario file in `test/scenarios/` is NOT required
-for every M1 tool — T1 / T2 / T3 remain the formal scenario files. Other M1
-tools can be validated by ad-hoc smoke tests that establish the tool works
-end-to-end. If a tool needs its own formal scenario, add one.
+### 1. Generate a novel test case
 
----
+Design a scenario that stresses some aspect of the current codebase in a way
+prior iterations haven't. The scenario must meet the **novelty threshold**
+defined below (§ Novelty measurement).
 
-## Milestones
+The scenario must operate through the existing tool surface, resource
+surface, or safety system — no probing internals directly. If the scenario
+requires a capability the bot doesn't yet have, you may build that capability
+within the design commitments and count its creation as part of this
+iteration (see § Missing capabilities below).
 
-### M1 — Observation ✅ COMPLETE (2026-05-03)
+Scenarios draw from categories such as:
 
-**Goal:** An agent can observe the world reliably. No world-writes, no
-movement, no looking-at yet.
+- **Boundary values** — coordinates at world edge, inventory at capacity,
+  chat at max length, distance at max reach, etc.
+- **Concurrency** — P1 and P2 invoking the same tool simultaneously, P2
+  observing while P1 acts, multi-bot coordination.
+- **Error recovery** — bot recovers after RCON-triggered death, chunk
+  unload mid-scan, disconnect/reconnect, invalid tool args.
+- **Race conditions** — tool A fires while tool B in flight, event ordering,
+  timing-dependent state.
+- **Resource exhaustion** — chat buffer overflow, pathfinder timeout,
+  long-running navigate, large entity lists.
+- **Adversarial input** — malformed JSON, unicode in usernames, SQL-ish
+  injection in chat, negative distances, out-of-range ints.
+- **State consistency** — tool result vs. resource read vs. RCON oracle,
+  inventory-after-place, health-during-flee.
+- **Environmental** — night-time hostile density, rain affecting movement,
+  dimension transitions, offline-mode quirks.
 
-**Tools to build (execute in order):**
+You are not limited to these categories; they're a starting palette.
 
-| Priority | Tool | Status | Why |
-|---|---|---|---|
-| 1 | `read_recent_chat` | ✅ Done (2026-05-03) | Unblocks T1. Tester observes invoker's chat. |
-| 2 | `list_nearby_players` | ✅ Done (2026-05-03) | Unblocks T2 later. Returns `{ username, position, distance, uuid }` for players within `maxDistance`. |
-| 3 | `get_biome` | ✅ Done (2026-05-03) | Returns biome name at bot position. Live use surfaced this gap. |
-| 4 | `look_at` / `look_at_player` | ✅ Done (2026-05-03) | Two tools: `look_at { x, y, z }` and `look_at_player { username }`. Uses `bot.lookAt(Vec3)`. |
-| 5 | `get_health` / `get_food` | ✅ Done (2026-05-03) | One tool: `get_health` returning `{ health, food, saturation }`. Bot is dying silently to Husks; agent needs visibility. |
-| 6 | `list_nearby_entities` | ✅ Done (2026-05-03) | Returns `{ type, name, position, distance, isHostile }` for entities within `maxDistance`. Precondition for mob-awareness. |
+### 2. Write the scenario to `opencode/iterations/NNN.md`
 
-**M1 in-scope behaviors:**
+Use the template in § Iteration file template. Include the novelty rationale
+before running anything.
 
-- Observe world state: chat, players nearby, entities nearby, own health, biome.
-- Passively orient the bot (`look_at` only rotates the head; no walking).
-- Report results cleanly with `assertCompleteness()` still passing.
+### 3. Run the scenario
 
-**M1 out-of-scope (explicitly deferred):**
+- Spin up P1 (and P2 if needed) locally — see `test/harness.md`.
+- Use RCON to set up preconditions and verify ground truth.
+- Record tool outputs, tester observations, and RCON confirmations.
 
-- ❌ **Movement.** No `navigate_to`, `navigate_relative`, or any tool that
-  causes the bot to walk. That is M2. The bot's body stays where it spawns.
-- ❌ **World-write.** No `place_block`, `dig_block`, `use_item`. That is M3.
-- ❌ **Safety behaviors.** No auto-respawn, fall protection, or mob-avoidance
-  logic. That is M4. `get_health` in M1 only *reports* — it does not *react*.
-- ❌ **Resource surface.** No `minecraft://*` resources. That is M5.
+### 4. Evaluate
 
-If during M1 the bot dies to a Husk and the world-state tools fail because
-the bot is dead, **do not build safety behaviors to fix it**. Instead, use
-RCON (`/kill @e[type=!player,distance=..32]`, `/tp`, `/effect give … resistance`)
-to stabilize the test environment. Safety is M4's problem.
+- **If the test passes first try:** record evidence in the iteration file,
+  mark `Result: PASS (no fix needed)`, move to iteration `N+1`.
+- **If the test fails:** proceed to § 5.
 
-**M1 acceptance criteria (all must hold before M2 begins):**
+### 5. Diagnose, fix, retry
 
-1. All six M1 tools present in `src/tools.js`, pass `assertCompleteness()`.
-2. Each M1 tool has been smoke-tested end-to-end against the Math deployment
-   with evidence recorded (tool output + RCON confirmation where applicable).
-3. No regressions on the four M0 tools (`chat`, `get_position`, `find_blocks`,
-   `inspect_inventory`) or on T1.
-4. `MathBridgeBot` on the Math deployment can, via OpenClaw, answer "what biome
-   am I in?", "look at me" (head rotation only), "what's your health?", and
-   "who else is nearby?" without hallucinating.
-5. `progress.md` updated: each M1 tool marked done with a one-line evidence
-   note.
+- Add a new entry to `opencode/issues.md` (the cross-iteration bug ledger)
+  describing the failure, its root cause, and the code change needed.
+- Fix the code. Verify `assertCompleteness()` still passes.
+- Re-run the iteration.
+- Repeat until the test passes, up to **25 fix attempts**.
+- After **5 fix attempts without progress**, re-evaluate the test case for
+  validity. See § Test case re-evaluation.
+- After **25 fix attempts**, the iteration is blocked. See § Blocking.
 
----
+### 6. Record
 
-### M2 — Movement ✅ COMPLETE (2026-05-03)
+- Iteration file finalised with `Result: PASS`, all fix attempts logged,
+  cross-references to `issues.md` entries.
+- Update `opencode/iterations/INDEX.md` with a one-line summary of the
+  iteration.
 
-**Tools to build:**
+### 7. Checkpoint every 50 iterations
 
-| Priority | Tool | Why |
-|---|---|---|
-| 1 | `navigate_to` | Absolute position navigation via `mineflayer-pathfinder`. |
-| 2 | `navigate_relative` | Relative offset movement. |
-| 3 | `get_time_of_day` / `get_weather` | Context for navigation decisions. |
+After iteration `050`, `100`, `150`, ..., `500`:
 
-**M2 out-of-scope:**
-
-- ❌ World-write (M3).
-- ❌ Safety / auto-respawn (M4).
-- ❌ Resource surface (M5).
-- ❌ Combat or path-interruption-on-threat (M4).
-
-**M2 acceptance criteria:**
-
-1. T2 (presence) scenario passes: P1 navigates to a known coordinate; P2
-   observes P1 in `list_nearby_players` at the correct position; RCON confirms.
-2. Bot can navigate back to a known safe location on command.
-3. No regressions on M1 tools or T1.
+- **Pause the main loop.**
+- Re-run every prior iteration's scenario against the current code.
+- For any that regress: document in `opencode/checkpoints/NNN.md`, fix the
+  regression, append a "regressed at checkpoint N, re-fixed" note to the
+  relevant iteration file.
+- Checkpoint activity does NOT count as an iteration.
+- Once the full regression pass is clean, resume the main loop at `N+1`.
 
 ---
 
-### M3 — World-write ✅ COMPLETE (2026-05-03)
+## Novelty measurement
 
-**Tools to build:**
+Each new iteration must achieve a novelty score `≥ 3` on the rubric below,
+relative to all prior iterations. This is low enough to not block the early
+iterations (where the design space is large) but high enough to prevent
+trivial duplicates after iteration ~200.
 
-| Priority | Tool | Why |
-|---|---|---|
-| 1 | `place_block` | Place a block from inventory at a relative offset. |
-| 2 | `dig_block` | Dig a block at a relative offset. Returns block name dug. |
-| 3 | `use_item` | Use held item (open doors, activate switches, etc.). |
+### Novelty rubric
 
-**M3 out-of-scope:**
+Score each new scenario on five dimensions (0 or 1 per dimension):
 
-- ❌ Safety / auto-respawn (M4).
-- ❌ Resource surface (M5).
-- ❌ Any path that sends `/commands` through `chat`. This is a design
-  commitment violation and must never be implemented.
-
-**M3 acceptance criteria:**
-
-1. T3 (world-write) scenario passes: P1 places a stone block; P2's
-   `find_blocks` and RCON both confirm it at the correct position.
-2. World edits use `bot.placeBlock()` / `bot.dig()` exclusively — no chat
-   path.
-3. No regressions on M1/M2 tools or T1/T2.
-
----
-
-### M4 — Bot safety ✅ COMPLETE (2026-05-03)
-
-**Behaviors to implement (in `src/bot.js`):**
-
-| Behavior | Mechanism |
+| Dimension | Earns 1 point if the scenario... |
 |---|---|
-| Auto-respawn | `bot.on("death")` → `bot.respawn()` |
-| Fall protection | `bot.entity.velocity.y < -5` → `bot.setControlState("jump", true)` |
-| Mob avoidance | health < 10 → navigate away from nearest hostile entity |
-| Health reporting | `bot.on("health")` → update internal state visible to `get_health` |
+| **Tool combination** | ...exercises a combination of tools/resources no prior iteration has exercised together |
+| **Category** | ...falls in a category (boundary / concurrency / error-recovery / race / resource / adversarial / state / environmental / other) with fewer than 10 prior iterations |
+| **Input shape** | ...uses argument shapes (ranges, types, special values) no prior iteration has used |
+| **Failure mode** | ...stresses a failure mode (timeout, invalid state, ordering, exhaustion) no prior iteration has stressed |
+| **Evidence layer** | ...cross-checks evidence in a way prior iterations haven't (e.g., tool+resource consistency, P1+P2+RCON+logfile, etc.) |
 
-**Toggleable** via `--safe-mode` flag (default: on).
+**Minimum total: 3.** If the proposed scenario scores < 3, discard it and
+generate a different one.
 
-**M4 out-of-scope:**
+The novelty score is declared in the iteration's frontmatter. Reviewers can
+spot-check by scanning `opencode/iterations/INDEX.md`.
 
-- ❌ Combat. Safety is *avoidance*, not *fighting back*.
-- ❌ Resource surface (M5).
+### Novelty index
 
-**M4 acceptance criteria:**
+`opencode/iterations/INDEX.md` is a running log. Every iteration appends one
+row:
 
-1. Bot survives 5 minutes in the Math world (which has active Husks) without
-   dying or requiring manual intervention.
-2. `get_health` returns accurate values during and after combat exposure.
-3. Safe-mode behaviors can be disabled via `--safe-mode=false` without
-   breaking other tools.
+```
+| NNN | YYYY-MM-DD | category | tools/resources used | novelty score | one-line summary |
+```
 
----
-
-### M5 — Resource surface ✅ COMPLETE (2026-05-03)
-
-**Resources to implement:**
-
-| URI | Content |
-|---|---|
-| `minecraft://position` | Bot coordinates, dimension, yaw, pitch |
-| `minecraft://inventory` | Current inventory |
-| `minecraft://health` | Health, food, saturation |
-| `minecraft://blocks/nearby` | Nearby block scan |
-| `minecraft://players/nearby` | Nearby player list |
-| `minecraft://chat/recent` | Recent chat buffer |
-
-**M5 out-of-scope:**
-
-- ❌ Any new tool logic. Resources MUST reuse the existing `Bot` methods
-  (`getPosition`, `inspectInventory`, `readRecentChat`, etc.) — do not
-  duplicate behavior.
-
-**M5 acceptance criteria:**
-
-1. `ListResources` returns all six URIs.
-2. Each `ReadResource` call returns the same data as its corresponding tool.
-3. Resources are documented in `README.md`.
+The agent consults this file before generating each new iteration's scenario.
 
 ---
 
-## Design commitments (non-negotiable at all milestones)
+## Test case re-evaluation (before escalating)
 
-1. **No ghost tools.** `assertCompleteness()` must pass at every milestone.
+After **5 fix attempts without the test passing**, stop and re-read the test
+case. Ask:
+
+- Does this scenario assume something Minecraft doesn't actually support?
+  (World height limits, reach distance ≤ 6 blocks, inventory size = 36, chat
+  char limit = 256, etc.)
+- Does it assume behavior mineflayer doesn't expose?
+- Does it assume server permissions the test bots don't have?
+- Is the precondition actually achievable via RCON in this world?
+
+**If the test case is invalid**, rewrite it with tighter assumptions,
+document the re-evaluation in the iteration file under a `## Re-evaluation`
+section, and resume fixing. The re-evaluation itself counts as novelty —
+the iteration now also tests Minecraft's actual limits.
+
+**If the test case is valid** but stuck, continue fixing up to the 25-attempt
+ceiling.
+
+---
+
+## Missing capabilities
+
+If an iteration requires a tool or resource that doesn't yet exist:
+
+- You may add it, provided the addition respects the six design commitments
+  (see § Design commitments).
+- The new tool must go through all four touch points: `TOOLS`, `SCHEMAS`,
+  `DISPATCHED`, `dispatch()` case. `assertCompleteness()` must pass.
+- The addition is part of the iteration's "fix" — document it in the
+  iteration file, not as a separate feature milestone.
+- Adding a capability does NOT require human approval unless it involves:
+  (a) a new dependency, (b) a breaking schema change to an existing tool,
+  (c) an architectural change to how bot/server/http.js interact, or
+  (d) a production-affecting change to `MathBridgeBot` on `nyx`. These are
+  escalations — see § Blocking.
+
+---
+
+## Blocking / escalation policy
+
+**Avoid escalations at all costs.** True blocking is not expected.
+
+An iteration is blocked (escalate) only if ALL of the following are true:
+
+- 25 fix attempts exhausted, OR a fix would require one of the escalation
+  cases listed in § Missing capabilities.
+- Re-evaluation (after the 5-attempt threshold) did not produce a valid
+  rewrite.
+- The Math server or RCON has become unreachable AND cannot be recovered by
+  the agent via RCON restart / container inspection / redeploy.
+
+On true blocking:
+
+- Write a final entry to `opencode/issues.md` with full diagnosis and
+  proposed remediation.
+- Mark the iteration `Result: BLOCKED` with the reason.
+- Stop the loop.
+- Wait for human input. Do not begin iteration `N+1` unilaterally.
+
+**Not blocking** (keep going):
+
+- The test case was invalid and had to be rewritten. Not blocked — that's
+  successful re-evaluation.
+- A fix required adding a new tool. Not blocked — that's successful
+  capability expansion.
+- A fix required RCON-level setup of world state (mob clearing, teleport,
+  gamemode change). Not blocked — that's fixture setup.
+
+---
+
+## Iteration file template
+
+Every file in `opencode/iterations/NNN.md` uses this template:
+
+```markdown
+# Iteration NNN: <one-line title>
+
+**Date:** YYYY-MM-DD
+**Result:** PASS | BLOCKED
+**Category:** boundary | concurrency | error-recovery | race | resource-exhaustion | adversarial | state | environmental | other
+**Novelty score:** N/5
+**Novelty rationale:** <what this tests that prior iterations haven't>
+**Fix attempts:** N
+**Issues filed:** #NNN, #NNN
+**Tools/resources exercised:** <list>
+
+## Scenario
+
+<preconditions, steps, pass criteria — enough detail that this could be
+re-run by a different agent reading cold>
+
+## Run log
+
+<what happened when the test was first run — tool outputs, RCON responses,
+ any errors>
+
+## Re-evaluation (if triggered)
+
+<after 5 fix attempts stuck: what was revisited, what assumption was wrong,
+ how the scenario was rewritten>
+
+## Fix(es) applied
+
+<each fix attempt: what was changed, why, and the result of re-running>
+
+## Final evidence
+
+<tool outputs / RCON confirmations / tester observations proving the
+ scenario now passes>
+```
+
+---
+
+## Issues ledger — `opencode/issues.md`
+
+A flat, append-only file. Every bug discovered across all iterations gets an
+entry. Format:
+
+```markdown
+## Issue #NNN — <short title>
+
+**Discovered in:** iteration NNN
+**Category:** <code area / subsystem>
+**Status:** OPEN | RESOLVED (iter NNN) | REGRESSED (checkpoint NN) | UPSTREAM
+
+### Symptom
+<what was observed>
+
+### Root cause
+<what the code was actually doing vs. what was intended>
+
+### Fix
+<what was changed; include file paths and a short diff description>
+
+### Regression test
+<which iteration(s) now cover this bug to prevent recurrence>
+```
+
+`issues.md` is the single source of truth for "what has this project ever
+gotten wrong?". Reading it top-to-bottom is the fastest way to understand
+the real-world reliability of the codebase.
+
+---
+
+## Checkpoint file template
+
+Every file in `opencode/checkpoints/NNN.md` uses this template:
+
+```markdown
+# Checkpoint NNN (after iteration NNN)
+
+**Date:** YYYY-MM-DD
+**Iterations re-run:** 1..NNN
+**Regressions found:** count
+
+## Regressions
+
+### Iteration NNN regressed
+
+<what broke, why, what was re-fixed>
+
+## Clean after re-fix
+
+<confirmation that a subsequent full regression pass is green before
+ resuming the main loop>
+```
+
+---
+
+## Harness reminders
+
+- P1 on `127.0.0.1:18080`, P2 on `127.0.0.1:18081`. Usernames `MathTest-P1`,
+  `MathTest-P2`. Lockfiles at `/tmp/mathtest-p[12].lock`.
+- RCON at `callisto:25576`, password in `opencode/context/MathInstance/secrets.env`.
+- Math server is shared with live `MathBridgeBot` — use RCON to isolate test
+  state when possible (e.g., `/kill @e[type=!player,distance=..32]`).
+- After each iteration, tear down test bots cleanly (kill processes, remove
+  lockfiles) to avoid leaving stale connections.
+- Use RCON generously for setup/teardown. It's the agent's ground truth and
+  its fixture control plane.
+
+---
+
+## Design commitments (non-negotiable)
+
+These hold across every iteration, every fix, every capability addition:
+
+1. **No ghost tools.** `assertCompleteness()` must pass at every point.
 2. **No chat-as-command.** World edits use mineflayer APIs exclusively.
 3. **Errors carry codes.** `normalizeError()` handles all throw shapes.
 4. **Stdout is sacred.** Logs go to stderr only.
 5. **One bot, many sessions.** HTTP entrypoint never spawns per-session.
 6. **Tools do; resources observe.**
 
----
-
-## Build rhythm for M1 (priorities 2–6)
-
-For each tool:
-
-1. Read the relevant `src/bot.js` and `src/tools.js` sections.
-2. Add the underlying `Bot` method (if needed).
-3. Add the tool to `TOOLS`, `SCHEMAS`, `DISPATCHED`, and the `dispatch()`
-   switch — all four touch points.
-4. Confirm `assertCompleteness()` passes by running:
-   `node -e "import('./src/tools.js').then(m => m.assertCompleteness())"`.
-5. Start P1 (and P2 if needed) locally against `callisto:1234`, call the
-   tool via a curl/MCP probe, and record the result.
-6. Cross-check with RCON where applicable (e.g., for `list_nearby_players`,
-   RCON `list` should match the tool's output).
-7. Tear down test bots, remove lockfiles.
-8. Update `progress.md` marking the tool done with a one-line evidence note.
-9. Move immediately to the next priority.
-
-Deploying new tools to the production `MathBridgeBot` on `nyx` is NOT
-required between M1 priorities — it can be batched at the end of M1 or done
-opportunistically if helpful. The smoke tests run against local P1/P2
-instances, which is enough to prove the tool works.
+Violating any of these is automatic grounds for re-doing the fix.
 
 ---
 
-## Test surface
+## Loop termination
 
-See `test/README.md` for the full testing methodology.
+The loop stops when:
 
-| Scenario | File | Unblocked by | Status |
-|---|---|---|---|
-| T1 — Chat | `test/scenarios/T1-chat.md` | `read_recent_chat` (M1) | ✅ **PASS** (2026-05-03) |
-| T2 — Presence | `test/scenarios/T2-presence.md` | `navigate_to`, `list_nearby_players` (M2) | ✅ **PASS** (2026-05-03) |
-| T3 — World-write | `test/scenarios/T3-world-write.md` | `place_block` (M3) | ✅ **PASS** (2026-05-03) |
+1. Iteration `500` completes successfully. (Normal completion.)
+2. A true blocker is hit as defined in § Blocking. (Escalation.)
+
+On normal completion, write a final summary to `opencode/iterations/SUMMARY.md`
+covering: total iterations, issues discovered, issues resolved, open issues,
+regressions caught at checkpoints, and categories stressed.
+
+---
+
+## Historical milestones (reference)
+
+The initial tool surface (M1–M5) was built incrementally and all scenarios
+T1/T2/T3 passed. See prior git history for that earlier `SPEC.md` if needed.
+The current codebase has:
+
+- 18 tools (`chat`, `get_position`, `find_blocks`, `inspect_inventory`,
+  `read_recent_chat`, `list_nearby_players`, `get_biome`, `look_at`,
+  `look_at_player`, `get_health`, `list_nearby_entities`, `navigate_to`,
+  `navigate_relative`, `get_time_of_day`, `get_weather`, `place_block`,
+  `dig_block`, `use_item`)
+- 6 resources (`minecraft://position|inventory|health|blocks/nearby|players/nearby|chat/recent`)
+- M4 safety: auto-respawn, fall protection, mob flee, health tracking
+  (toggle via `--safe-mode`)
+- Deployed to `nyx` as `mcpmc-bridge.service`, connected to Discord via
+  OpenClaw
+
+The robustness loop starts from this baseline.
