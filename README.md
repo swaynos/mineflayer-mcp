@@ -1,52 +1,96 @@
-# minecraft-mcp
+# mineflayer-mcp
 
-Repo-owned MCP server for the **MathBridgeBot** Minecraft bot.
+An [MCP](https://modelcontextprotocol.io/) server that exposes a
+[mineflayer](https://github.com/PrismarineJS/mineflayer) bot to AI agents.
 
-Wraps [`mineflayer`](https://github.com/PrismarineJS/mineflayer) and exposes a subset of bot
-actions over the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP), allowing
-AI agents (via OpenClaw) to interact with a Minecraft server.
-
-Replaces the abandoned `@gerred/mcpmc@0.0.10`, which advertised tools it did not dispatch.
-
----
-
-## Architecture
-
-```
-Discord user / OpenClaw agent
-   │
-   ▼
-OpenClaw gateway (nyx)
-   │  MCP streamable-http
-   ▼
-src/http.js  ← production entrypoint, HTTP server on 127.0.0.1:8080
-   │
-   ▼
-src/bot.js   ← single long-lived mineflayer bot (MathBridgeBot)
-   │
-   ▼
-Minecraft server (callisto:1234, version 1.21.1)
-```
-
-One bot instance is shared across all concurrent MCP sessions. Each session gets its own
-`McpMinecraftServer` instance and `StreamableHTTPServerTransport`.
-
-`src/index.js` exposes the same server over stdio for local development and smoke testing.
+> **Project status: barebones.**
+> The current implementation works for a narrow set of tools against a specific
+> deployment, but it is not yet a general-purpose, high-quality MCP server. The
+> goal of this repo is to build one.
 
 ---
 
-## Tools (M0)
+## Goal
 
-| Tool | Description |
+Produce a **high-quality, general-purpose mineflayer-mcp server** that AI agents
+can use to observe and act in any Minecraft world, with:
+
+- A complete, honest tool surface (no ghost tools, no silent fallthroughs).
+- A resource surface for observable world state.
+- Robust error handling that never loses information to serialization.
+- Safe defaults for bot lifecycle (spawn/chunk-load gates, no reconnect storms).
+- Single-instance discipline (no duplicate-login kicks).
+- Equally viable as a local stdio server and as a deployed streamable-http service.
+- Documented, tested, and pluggable into any MCP-capable agent runtime.
+
+This repo exists because the previous state-of-the-art (`@gerred/mcpmc@0.0.10`)
+advertised ten tools but dispatched only four, destroyed error codes via
+`String(error)`, and abandoned the project after one day of commits.
+
+---
+
+## What works today
+
+The current `src/` implements a **minimum viable** MCP server sufficient to
+prove the architecture end-to-end:
+
+| Tool | Status |
 |---|---|
-| `chat` | Send a chat message in-world as MathBridgeBot |
-| `get_position` | Read current bot coordinates, dimension, yaw, pitch |
-| `find_blocks` | Locate nearby blocks by name within a configurable radius |
-| `inspect_inventory` | List current inventory contents |
+| `chat` | Works |
+| `get_position` | Works |
+| `find_blocks` | Works |
+| `inspect_inventory` | Works |
 
-`assertCompleteness()` in `src/tools.js` runs at module load time and fails startup if any
-advertised tool lacks a dispatch case, or any dispatch case has no schema. This is the
-structural guard against the upstream bug this project exists to fix.
+Key properties already in place:
+
+- `assertCompleteness()` in `src/tools.js` — fails startup if advertised tools ≠ dispatched tools.
+- `normalizeError()` in `src/errors.js` — never returns `[object Object]`.
+- Spawn-gate and chunk-load-gate in `src/bot.js` before any world query.
+- No auto-reconnect; process exits, systemd owns restart.
+- Single-instance PID lockfile (`src/lock.js`).
+- Shared singleton bot across concurrent MCP sessions (`src/http.js`).
+
+---
+
+## What is missing
+
+To become high quality, this project needs (roughly in priority order):
+
+**Tool surface**
+- Movement: `navigate_to`, `navigate_relative`, `look_at`, `look_at_player`.
+- World edit: `dig_block`, `place_block`, `use_item`.
+- Observation: `get_biome`, `list_nearby_entities`, `list_nearby_players`,
+  `get_time_of_day`, `get_weather`, `get_health`, `get_food`.
+- Inventory actions: `equip_item`, `drop_item`, `craft_item`, `open_container`.
+
+**Resource surface**
+- `minecraft://position`, `minecraft://inventory`, `minecraft://blocks/nearby`,
+  `minecraft://players/nearby`, `minecraft://biome`, `minecraft://health`.
+- Read-only observable state, separate from side-effectful tools.
+
+**Bot quality**
+- Fall protection, mob avoidance, auto-respawn (toggleable via `--safe-mode`).
+- Pathfinder integration (`mineflayer-pathfinder`) for reliable movement.
+- Chunk-aware scanning that doesn't silently return empty because chunks aren't loaded.
+
+**Agent-trust hardening**
+- Every tool returns structured evidence of effect (not just a success flag).
+- Tools that can fail partially (e.g., `navigate_to` giving up) return progress.
+- Clear distinction between "tool ran and nothing happened" vs. "tool couldn't run."
+- No chat-as-command paths — all world edits go through mineflayer APIs, never
+  through sending `/fill` or `/setblock` as chat.
+
+**Operational**
+- CI test suite that runs against a throwaway Minecraft container.
+- Versioned tool schemas with a compatibility policy.
+- Published npm package (`mineflayer-mcp`) with documented public API.
+- Stdio smoke test that works cross-platform (current one fails on macOS).
+- Configurable via env vars, not just CLI flags.
+
+**Docs**
+- Tool-by-tool reference with examples.
+- Agent-authoring guide: how to design prompts that use these tools well.
+- Deployment recipes for stdio, streamable-http, and behind a gateway.
 
 ---
 
@@ -54,17 +98,16 @@ structural guard against the upstream bug this project exists to fix.
 
 ```
 src/
-  index.js      CLI entrypoint — stdio MCP (local dev / smoke)
-  http.js       HTTP entrypoint — streamable-http MCP (production)
+  index.js      CLI entrypoint — stdio MCP
+  http.js       HTTP entrypoint — streamable-http MCP
   bot.js        Mineflayer wrapper: connect, spawn-gate, chunk-gate, operations
   tools.js      TOOLS array, Zod schemas, dispatch(), assertCompleteness()
-  server.js     McpMinecraftServer class with normalized error handling
-  errors.js     McpError class, normalizeError(), ErrorCodes
-  logger.js     Structured JSON-line stderr logger
+  server.js     McpMinecraftServer with normalized error handling
+  errors.js     McpError, normalizeError(), ErrorCodes
+  logger.js     JSON-line stderr logger
   lock.js       Single-instance PID lockfile
 scripts/
-  smoke.js      stdio-based end-to-end test
-  deploy.sh     rsync + remote install + systemd restart (in repo root scripts/)
+  smoke.js      stdio end-to-end test (currently macOS-broken)
 ```
 
 ---
@@ -74,64 +117,33 @@ scripts/
 ```sh
 npm install
 
-# Connect to Minecraft via stdio (local dev)
-node src/index.js --host callisto --port 1234 --username MathBridgeBot-Local
+# stdio MCP against any Minecraft server
+node src/index.js --host <host> --port <port> --username <name>
 ```
 
-All logs are emitted to **stderr** as JSON lines. Stdout carries only MCP JSON-RPC traffic.
+All logs go to **stderr** as JSON lines. Stdout carries only MCP JSON-RPC.
 
-### Smoke Test
+### Smoke test
 
 ```sh
 npm run smoke
-# or
-MC_HOST=callisto MC_PORT=1234 MC_USER=MathBridgeBot-Smoke node scripts/smoke.js
 ```
 
-Exercises all 4 tools end-to-end and writes the JSON-RPC exchange to `smoke.log`.
+Exercises the current tool set end-to-end and writes the exchange to `smoke.log`.
 
-> **Note:** The smoke test connects under a different username (`MathBridgeBot-Smoke`) so it
-> does not kick the production bot from the server.
-
-> **Known issue:** The smoke test fails to connect from macOS due to a local network/module
-> resolution difference with minecraft-protocol. It passes when run from `nyx` where the
-> deployment target is. Use the deployed smoke path (`npm run smoke` after deploy) for validation.
+> Known issue: fails on macOS due to a minecraft-protocol handshake
+> discrepancy. Passes on Linux. Tracked as one of the first items to fix.
 
 ---
 
-## Deploy
+## HTTP Entrypoint
 
 ```sh
-# From the repo root:
-bash scripts/deploy.sh
-```
-
-Or from within `minecraft-mcp/`:
-
-```sh
-npm run deploy
-```
-
-The deploy script:
-1. rsyncs `minecraft-mcp/` to `nyx:/home/jpswaynos/minecraft-mcp/`
-2. Runs `npm ci --omit=dev` on `nyx`
-3. Rewrites `~/.config/systemd/user/mcpmc-bridge.service` to run `src/http.js`
-4. Reloads systemd and restarts both the bridge and OpenClaw gateway
-5. Verifies `/healthz` returns `ok`
-
----
-
-## Production Entry Point (HTTP)
-
-```sh
-# Invoked by mcpmc-bridge.service on nyx:
 node src/http.js \
-  --host callisto --port 1234 --username MathBridgeBot \
+  --host <host> --port <port> --username <name> \
   --http-port 8080 --http-path /mcp --health-path /healthz \
-  --lock /tmp/mathbridgebot.lock --log-level info --stateful
+  --lock /tmp/<name>.lock --log-level info --stateful
 ```
-
-Options:
 
 | Flag | Default | Description |
 |---|---|---|
@@ -140,47 +152,47 @@ Options:
 | `--username` | *(required)* | Bot username |
 | `--http-port` | `8080` | HTTP listening port |
 | `--http-path` | `/mcp` | MCP endpoint path |
-| `--health-path` | `/healthz` | Health check path (returns `ok`) |
-| `--lock` | `/tmp/mathbridgebot.lock` | PID lockfile path |
+| `--health-path` | `/healthz` | Returns `ok` |
+| `--lock` | `/tmp/<name>.lock` | PID lockfile path |
 | `--log-level` | `info` | `debug` / `info` / `warn` / `error` |
-| `--version` | *(auto)* | Force a specific Minecraft version |
 | `--stateful` / `--stateless` | stateful | Session mode |
 
 ---
 
-## Environment
+## Requirements
 
-- **Node.js**: 22.x (`.nvmrc` pins this)
-- **mineflayer**: `^4.37.0` — required for Minecraft 1.21.1 (protodef 1.19+); earlier versions
-  produce `"Invalid move player packet"` on connect
-- **@modelcontextprotocol/sdk**: `^1.0.0`
-- **zod**: `^3.23.8`
-
----
-
-## Key Design Decisions
-
-**No auto-reconnect.** When the bot disconnects, the process exits (code 0 for intentional
-kicks like duplicate-login, code 1 otherwise). Systemd owns restart policy via `Restart=always`.
-This eliminates the reconnect-storm bug present in `@gerred/mcpmc`.
-
-**No supergateway.** The production entry point (`src/http.js`) serves MCP streamable-http
-directly via `StreamableHTTPServerTransport`. Using supergateway would spawn a fresh MCP child
-per session, causing multiple bot processes to fight over the same Minecraft username.
-
-**Stdout is sacred.** All logs go to stderr. Stdout carries only MCP JSON-RPC.
-
-**`assertCompleteness()` is non-negotiable.** If you add a tool to `TOOLS` without adding a
-`case` to the `dispatch()` switch (and vice versa), the process will refuse to start.
+- **Node.js** 22.x (see `.nvmrc`).
+- **mineflayer** `^4.37.0` — required for 1.21.1+ (protodef 1.19).
+- **@modelcontextprotocol/sdk** `^1.0.0`.
+- **zod** `^3.23.8`.
 
 ---
 
-## M1 / Future Work
+## Design Commitments
 
-See the parent repo `spec.md` for the next milestone plan. Planned additions:
+These hold regardless of tool-surface growth:
 
-- `navigate_relative` — move bot in-world
-- `dig_block_relative` — mine a block
-- `place_block` — place a block from inventory
-- Resource surface (`minecraft://position`, `minecraft://inventory`, etc.)
-- Automatic bot health/safety (fall protection, mob avoidance)
+1. **No ghost tools.** `assertCompleteness()` is non-negotiable — the process
+   refuses to start if advertised tools and dispatched tools disagree.
+2. **Errors carry codes.** `normalizeError()` handles every throw shape and
+   never produces `[object Object]`.
+3. **Stdout is sacred.** MCP JSON-RPC only; logs go to stderr.
+4. **One bot, many sessions.** The HTTP entrypoint shares a single long-lived
+   mineflayer bot across concurrent MCP sessions — never spawn-per-session.
+5. **Lifecycle discipline.** No in-process auto-reconnect; exit and let the
+   supervisor restart. Prevents login-kick storms.
+6. **Tools do; resources observe.** Side effects go in tools, observable state
+   goes in resources.
+
+---
+
+## Contributing
+
+The roadmap is "What is missing" above. Pick any item, open a branch, and keep
+the six design commitments intact.
+
+---
+
+## License
+
+See `LICENSE`.

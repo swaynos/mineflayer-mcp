@@ -1,19 +1,18 @@
 {
-  "name": "minecraft-mcp",
+  "name": "mineflayer-mcp",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Repo-owned MCP server for the MathBridgeBot Minecraft bot.",
+  "description": "MCP server exposing a mineflayer bot to AI agents. Work in progress.",
   "engines": {
     "node": ">=22"
   },
   "bin": {
-    "minecraft-mcp": "src/index.js"
+    "mineflayer-mcp": "src/index.js"
   },
   "scripts": {
     "start": "node src/index.js",
-    "smoke": "node scripts/smoke.js",
-    "deploy": "bash ../scripts/deploy.sh"
+    "smoke": "node scripts/smoke.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
