@@ -61,6 +61,8 @@ To become high quality, this project needs (roughly in priority order):
 - World edit: `dig_block`, `place_block`, `use_item`.
 - Observation: `get_biome`, `list_nearby_entities`, `list_nearby_players`,
   `get_time_of_day`, `get_weather`, `get_health`, `get_food`.
+- Chat: `read_recent_chat` — returns buffered chat lines since a given timestamp.
+  **Required for the two-instance test harness (Tier 1 scenario).**
 - Inventory actions: `equip_item`, `drop_item`, `craft_item`, `open_container`.
 
 **Resource surface**
@@ -81,6 +83,15 @@ To become high quality, this project needs (roughly in priority order):
   through sending `/fill` or `/setblock` as chat.
 
 **Operational**
+**Testing**
+- Two-instance test harness: two local `mineflayer-mcp` processes (`MathTest-P1`
+  on `:18080`, `MathTest-P2` on `:18081`) connect to the same world simultaneously.
+  One acts as the **invoker** (performs the action), the other as the **tester**
+  (independently observes the result). RCON is the authoritative oracle.
+  - Tier 1: `chat` invoker / `read_recent_chat` tester. Unblocked once
+    `read_recent_chat` exists.
+  - Tier 2: `navigate_to` invoker / `list_nearby_players` tester.
+  - Tier 3: `place_block` invoker / `find_blocks` tester + RCON confirm.
 - CI test suite that runs against a throwaway Minecraft container.
 - Versioned tool schemas with a compatibility policy.
 - Published npm package (`mineflayer-mcp`) with documented public API.
