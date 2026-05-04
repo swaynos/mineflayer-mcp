@@ -1,31 +1,167 @@
-# SPEC.md — mineflayer-mcp Robustness Loop
+# SPEC.md — mineflayer-mcp Implementation Contract
 
-This file is the implementation contract for `mineflayer-mcp`. M1–M5 are
-complete (see git history / prior `SPEC.md` for evidence). This spec defines
-the **next phase**: an iterative stress-test loop that hardens the existing
-implementation by generating novel test cases, running them against the live
-Math deployment, documenting any bugs found, fixing them, and repeating.
-
-`README.md` is the public face of the project; this file is for the agent
-doing the work.
+This file is the implementation contract for `mineflayer-mcp` and the
+outward-facing description of what the project is building next.
+`README.md` is the public face of the project (what the software does);
+this file explains **how the software is being hardened and why the
+process looks the way it does**.
 
 ---
 
-## Current focus — iterative robustness
+## Where the project is, at a glance
 
-**Run the loop until 500 iterations complete or a true blocker escalates.
-Do not stop between iterations. Do not expand scope beyond what the
-existing design commitments allow.**
+The core `mineflayer-mcp` server is built. All five original milestones
+(M1 observation, M2 movement, M3 world-write, M4 safety, M5 resources)
+are complete and deployed to production (`MathBridgeBot` on `nyx`,
+connected to a live Minecraft server). The public surface is:
 
-Each iteration is atomic, numbered, and permanent. Each iteration's scenario
-file is stored in `opencode/iterations/NNN.md` (gitignored — local context,
-not committed code).
+- **18 tools** (chat, navigation, observation, world-edit, etc.)
+- **6 MCP resources** (read-only views of bot state)
+- **Runtime safety** (auto-respawn, fall protection, mob avoidance)
+
+What remains is not "build more features." It is **prove that the
+existing features actually support the gameplay they claim to support,
+under realistic multi-agent usage.** That proof is structured as a
+series of **epochs** — long testing campaigns, each with a distinct
+theme, distilled at the end into a keeper test suite and a honest
+list of what broke and why.
+
+---
+
+## The epoch model (for observers of this repo)
+
+An **epoch** is a bounded, autonomous testing campaign. The agent
+drives it — generating test scenarios, running them against the live
+Minecraft server, fixing any bugs found, and recording everything.
+At the end of an epoch, the work is distilled into a permanent summary
+in `opencode/epochs/epoch_NNN.md`.
+
+### Epoch 1 — Subsystem robustness (COMPLETE)
+
+- **Method:** 500 auto-generated iterations stressing the tool surface
+  with random-ish inputs, race conditions, and boundary values.
+- **Outcome:** **52 iterations** (of 500) retained as genuinely valuable
+  test cases; the remainder were smoke tests in disguise.
+- **Bugs found and fixed:** 2 real concurrency bugs in the pathfinder
+  integration, 1 syntax regression caught by checkpoint, 1 upstream
+  constraint documented (Minecraft's chat anti-spam).
+- **Honest retrospective:** around iteration 150 the loop degenerated
+  into repetitive "call tool, observe return shape" iterations. The
+  original novelty rubric rewarded surface uniqueness rather than
+  behavioral insight. Diagnosis in `opencode/epochs/epoch_001.md`.
+
+### Epoch 2 — Natural gameplay via actor/observer (NEXT)
+
+- **Method:** an autonomous looping agent cycles over 8 gameplay epics
+  drawn from what two casual Minecraft players actually do together.
+  Each iteration follows an **actor/observer** pattern: one bot (P1)
+  performs a narrow gameplay action, the other bot (P2) independently
+  measures the result. RCON is the third-party oracle.
+- **Epics:**
+  1. *"Where are you?"* — broadcast position, verify via observation.
+  2. *"P1 chops a tree"* — find/navigate/dig loop with observer.
+  3. *"P1 builds a cube, P2 measures it"* — compositional world-write.
+  4. *"P1 goes mining"* — sustained dig chains and safety interaction.
+  5. *"P1 tries to farm food"* — discovers missing capabilities.
+  6. *"P1 tries to craft a tool"* — capability-building epic.
+  7. *"P1 explores; P2 tracks"* — sustained navigation, chunk-range.
+  8. *"P1 performs an action, P2 scores it"* — integration check.
+- **Hard cap:** up to **500 iterations**. The loop terminates the moment
+  all 8 epics meet their minimum-progress criteria, OR when the counter
+  hits 500, whichever is first.
+- **Anti-shortcut rules:** the novelty evaluator (`opencode/novelty.md`
+  § Rule 0) auto-rejects any iteration that tries to cram a whole
+  epic into a single test. Epics are satisfied by MANY small, narrow
+  iterations — not a few sweeping ones.
+- **Deterministic scoring:** a 10-rule boolean checklist against a
+  persistent `COVERAGE.json` index, threshold 5/10. No subjective
+  "novelty score" — every signal is a set-membership test.
+
+### Future epochs (tentative)
+
+- **Epoch 3 — PVP / redstone / nether:** the advanced-gameplay surface
+  that epoch 2 explicitly deferred.
+- **Epoch 4 — Multi-agent (> 2 bots) coordination**.
+- **Epoch 5 — Performance & throughput**: latency budgets, concurrent
+  session scaling.
+
+Future epochs are named for context; they are not currently scoped.
+
+---
+
+## Why this structure
+
+The core insight from epoch 1 was that **test quantity is not test
+quality**. 500 iterations produced 52 useful tests. The rest were noise
+that happened to pass a novelty check based on surface uniqueness.
+
+Epoch 2 fixes this with:
+
+1. **Thematic framing** — gameplay epics are what users actually do,
+   so failures map directly to user pain.
+2. **Actor/observer separation** — symmetric roles produce ambiguous
+   assertions; asymmetric roles make every test directional.
+3. **Rule 0 in novelty evaluation** — rejects iterations that bundle
+   too much together, forcing the loop to stay narrow.
+4. **Hard cap at 500** — forces the loop to exit, with or without full
+   coverage, so honest reporting replaces grinding.
+
+If epoch 2 also produces a low retention ratio (say, <20%), that's
+itself a finding: it means the epics are too broad or the novelty
+rules still have a loophole. Each epoch produces a retrospective that
+informs the next.
+
+---
+
+## Where to look
+
+| If you want to know... | Read... |
+|---|---|
+| What the software does | `README.md` |
+| What tools & resources exist | `README.md` § Current surface |
+| The deployment of the production bot | `opencode/context/MathInstance/spec.md` |
+| What epoch 1 tested and what broke | `opencode/epochs/epoch_001.md` |
+| What epoch 2 will test | `opencode/epoch_2_spec.md` |
+| How novelty is evaluated | `opencode/novelty.md` |
+| Every bug ever found by the testing loop | `opencode/issues.md` |
+| How to run a scenario yourself | `test/README.md`, `test/harness.md` |
+
+Per `.gitignore`, everything under `opencode/` is local context — it
+is not committed to the repository. What IS committed is this spec,
+the `README.md`, the source tree in `src/`, and the formal scenarios
+in `test/`. The testing artifacts are deliberately kept separate so
+that the repo remains focused on the software under test, not the
+evolving testing methodology.
+
+---
+
+## The rest of this document
+
+What follows is the **operational detail the agent needs** to run an
+epoch correctly — iteration lifecycle, blocking policy, fix cycles,
+file formats, and design commitments. It is written for the agent;
+casual observers do not need to read past this point.
+
+---
+
+## Current focus — epoch 2
+
+**Run the loop until all 8 epics meet their minimum-progress
+criteria OR the iteration counter hits 500, whichever is first. Do
+not stop between iterations. Do not expand scope beyond what the
+existing design commitments allow. DO NOT ATTEMPT TO COMPLETE AN
+EPIC IN A SINGLE ITERATION (see `opencode/novelty.md` § Rule 0).**
+
+Each iteration is atomic, numbered, and permanent. Each iteration's
+scenario file is stored in `opencode/iterations/NNN.md` (gitignored —
+local context, not committed code).
 
 ---
 
 ## The loop
 
-For each iteration `N` in `001..500`:
+For each iteration `N` until exit conditions are met (see § Loop
+termination):
 
 ### 1. Generate a novel test case
 
@@ -349,14 +485,25 @@ Violating any of these is automatic grounds for re-doing the fix.
 
 ## Loop termination
 
-The loop stops when:
+The loop stops the moment ONE of the following becomes true
+(whichever comes first):
 
-1. Iteration `500` completes successfully. (Normal completion.)
-2. A true blocker is hit as defined in § Blocking. (Escalation.)
+1. **Normal completion.** All 8 epoch-2 epics have met their
+   minimum-progress criteria (≥ 15 accepted iterations each, with
+   ≥ 1 cross-source-oracle and ≥ 1 failure-path) AND the
+   bug-density gate has not been tripped in the most recent 20
+   iterations.
+2. **Hard cap.** Iteration counter reaches **500**. The loop
+   stops immediately regardless of remaining epic coverage. This
+   exists to force an exit and prevent the noise-accumulation that
+   plagued epoch 1's final 350 iterations.
+3. **Escalation.** A true blocker is hit as defined in § Blocking.
 
-On normal completion, write a final summary to `opencode/iterations/SUMMARY.md`
-covering: total iterations, issues discovered, issues resolved, open issues,
-regressions caught at checkpoints, and categories stressed.
+On any exit, produce `opencode/epochs/epoch_002.md` applying
+retention rules to distill the epoch's keepers — including an honest
+accounting of which epics were satisfied, which were cut short, and
+which issues remain open. Then clear `opencode/iterations/` and
+`opencode/checkpoints/` for epoch 3.
 
 ---
 
