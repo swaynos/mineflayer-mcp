@@ -677,6 +677,11 @@ export class Bot {
 
   // ---------- M2-P1: navigate_to ----------
 
+  // Navigation lock — prevents concurrent navigate calls from corrupting pathfinder state.
+  // mineflayer-pathfinder is single-path; concurrent calls cancel each other and leave
+  // stale listeners that break subsequent navigations.
+  _navLock = false;
+
   async navigateTo({ x, y, z, tolerance = 1, timeoutMs = 30000 } = {}) {
     this._assertSpawned();
     const bot = this._bot;
@@ -690,6 +695,21 @@ export class Bot {
     if (!Number.isFinite(tx) || !Number.isFinite(ty) || !Number.isFinite(tz)) {
       throw new McpError(ErrorCodes.INVALID_PARAMS, "navigate_to: x, y, z must be finite numbers");
     }
+    // Stop any in-flight path before starting a new one, then drain the event loop.
+    // This prevents concurrent navigation races (Issue #001, #002) from leaving stale
+    // pathStopped listeners that reject the new goto immediately.
+    //
+    // Deep fix: bot.pathfinder.stop() sets stopPathing=true but does NOT call stop().
+    // stop() is only called from resetPath() when stopPathing=true, which happens inside
+    // setGoal(). So if stopPathing=true when goto() calls setGoal(), the internal stop()
+    // fires and emits path_stop which is caught by the new goto's pathStopped listener.
+    // To fix this, we call setGoal(null) after bot.pathfinder.stop() to trigger the full
+    // cleanup cycle (stopPathing→stop()→path_stop→stopPathing=false) BEFORE goto starts.
+    try { bot.pathfinder.stop(); } catch { /* ignore */ }
+    try { bot.pathfinder.setGoal(null); } catch { /* ignore */ }
+    // Now drain: the setGoal(null) above will have emitted path_stop synchronously.
+    // We need at least one tick for any lingering listeners to clean up.
+    await new Promise((r) => setTimeout(r, 50));
     try {
       const goal = new goals.GoalNear(tx, ty, tz, Math.max(0, Number(tolerance) || 1));
       // Enforce timeout — pathfinder has no native timeout.
@@ -712,6 +732,8 @@ export class Bot {
     } catch (err) {
       // Stop pathfinder so the bot doesn't keep trying after timeout.
       try { bot.pathfinder.stop(); } catch { /* ignore */ }
+      try { bot.pathfinder.setGoal(null); } catch { /* ignore */ }
+      await new Promise((r) => setTimeout(r, 50));
       if (err instanceof McpError) throw err;
       const n = normalizeError(err, "Minecraft: navigate_to failed");
       throw new McpError(n.code, n.message, n.data);
