@@ -10,21 +10,26 @@ process looks the way it does**.
 
 ## Where the project is, at a glance
 
-The core `mineflayer-mcp` server is built. All five original milestones
+The core `mineflayer-mcp` server is built and has been stress-tested
+through two complete testing epochs. All five original milestones
 (M1 observation, M2 movement, M3 world-write, M4 safety, M5 resources)
-are complete and deployed to production (`MathBridgeBot` on `nyx`,
-connected to a live Minecraft server). The public surface is:
+are complete and deployed to production. The current public surface is:
 
-- **18 tools** (chat, navigation, observation, world-edit, etc.)
+- **19 tools** (chat, navigation, observation, world-edit, crafting)
 - **6 MCP resources** (read-only views of bot state)
 - **Runtime safety** (auto-respawn, fall protection, mob avoidance)
 
+The 19th tool (`craft_item`) was added during Epoch 2 when the gameplay
+loop for "P1 crafts a tool" required it. More capability gaps remain —
+see `opencode/epoch_3_spec.md` for the next round of expected additions.
+
 What remains is not "build more features." It is **prove that the
 existing features actually support the gameplay they claim to support,
-under realistic multi-agent usage.** That proof is structured as a
-series of **epochs** — long testing campaigns, each with a distinct
-theme, distilled at the end into a keeper test suite and a honest
-list of what broke and why.
+under realistic multi-agent usage, and fill capability gaps as real
+gameplay loops expose them.** That proof is structured as a series of
+**epochs** — long testing campaigns, each with a distinct theme,
+distilled at the end into a keeper test suite and an honest list of
+what broke and why.
 
 ---
 
@@ -45,71 +50,93 @@ in `opencode/epochs/epoch_NNN.md`.
 - **Bugs found and fixed:** 2 real concurrency bugs in the pathfinder
   integration, 1 syntax regression caught by checkpoint, 1 upstream
   constraint documented (Minecraft's chat anti-spam).
-- **Honest retrospective:** around iteration 150 the loop degenerated
-  into repetitive "call tool, observe return shape" iterations. The
-  original novelty rubric rewarded surface uniqueness rather than
-  behavioral insight. Diagnosis in `opencode/epochs/epoch_001.md`.
+- **Retrospective:** around iteration 150 the loop degenerated into
+  repetitive "call tool, observe return shape" iterations. The original
+  novelty rubric rewarded surface uniqueness rather than behavioral
+  insight. See `testing/epoch-001-retrospective.md` for the public
+  distillation.
 
-### Epoch 2 — Natural gameplay via actor/observer (NEXT)
+### Epoch 2 — Natural gameplay via actor/observer (COMPLETE)
 
-- **Method:** an autonomous looping agent cycles over 8 gameplay epics
-  drawn from what two casual Minecraft players actually do together.
-  Each iteration follows an **actor/observer** pattern: one bot (P1)
-  performs a narrow gameplay action, the other bot (P2) independently
-  measures the result. RCON is the third-party oracle.
+- **Method:** autonomous loop cycled over 8 gameplay epics drawn from
+  what two casual Minecraft players actually do together. Each iteration
+  used the actor/observer pattern: P1 performs a narrow gameplay action,
+  P2 independently measures the result, RCON serves as oracle.
+- **Outcome:** 152 iterations before the loop hung. **6 of 8 epics fully
+  met their minimum-progress criteria** (≥15 accepted iterations, ≥1
+  cross-source oracle, ≥1 failure-path, ≥30% failure-path ratio). The
+  other 2 (Epic 7 exploration, Epic 8 P2-scores-P1) hit 15+ iterations
+  but fell short of the 30% failure-path ratio.
+- **Bugs found and resolved:**
+  - Issue #005 — `dig_block` silently succeeded for out-of-reach blocks.
+    Fix: reach-distance check before `bot.dig()`.
+  - Issue #006 — cross-bot `find_blocks` has a 50–200ms chunk-cache
+    staleness window after a remote dig. Documented as upstream/design.
+  - Issue #007 — `craft_item` tool added as the 19th capability to
+    satisfy Epic 6. Two fix iterations to support both 2×2 and 3×3 recipes.
+- **Retrospective:** the Options A/B/C/D incentive stack (fix-bonus,
+  30% failure ratio, observation-only exclusion, "why this might break"
+  section) held the loop to substantive iterations — unlike Epoch 1 —
+  but ~107 of 152 iteration files collapsed to "see COVERAGE.json"
+  stubs, making the retrospective harder. Epoch 3 introduces Rule 11
+  (iteration-file completeness gate) to prevent this.
+  Full diagnosis in `opencode/epochs/epoch_002.md`.
+
+### Epoch 3 — Interaction, resource flow, resilience (NEXT)
+
+- **Method:** same autonomous actor/observer loop, 6 new epics addressing
+  gaps from Epoch 2. Hard cap still 500 iterations. Novelty threshold
+  still 5/10. Same incentive stack (A/B/C/D) plus new Rule 11 gate.
 - **Epics:**
-  1. *"Where are you?"* — broadcast position, verify via observation.
-  2. *"P1 chops a tree"* — find/navigate/dig loop with observer.
-  3. *"P1 builds a cube, P2 measures it"* — compositional world-write.
-  4. *"P1 goes mining"* — sustained dig chains and safety interaction.
-  5. *"P1 tries to farm food"* — discovers missing capabilities.
-  6. *"P1 tries to craft a tool"* — capability-building epic.
-  7. *"P1 explores; P2 tracks"* — sustained navigation, chunk-range.
-  8. *"P1 performs an action, P2 scores it"* — integration check.
-- **Hard cap:** up to **500 iterations**. The loop terminates the moment
-  all 8 epics meet their minimum-progress criteria, OR when the counter
-  hits 500, whichever is first.
-- **Anti-shortcut rules:** the novelty evaluator (`opencode/novelty.md`
-  § Rule 0) auto-rejects any iteration that tries to cram a whole
-  epic into a single test. Epics are satisfied by MANY small, narrow
-  iterations — not a few sweeping ones.
-- **Deterministic scoring:** a 10-rule boolean checklist against a
-  persistent `COVERAGE.json` index, threshold 5/10. No subjective
-  "novelty score" — every signal is a set-membership test.
+  1. *"P1 interacts with animals and blocks"* — add `attack_entity`,
+     `activate_block`; test combat and interactive-block primitives.
+  2. *"P1 manages inventory explicitly"* — add `equip_item`, `drop_item`,
+     container tools (`open_container`, `take_item`, `deposit_item`,
+     `close_container`).
+  3. *"P1 eats, sleeps, survives"* — add `eat`, `sleep`; close survival
+     gameplay loop.
+  4. *"P1 follows P2"* — add `follow_player`; test continuous-behavior.
+  5. *"P1 runs a resource-flow loop"* — compose everything from epics 9–11
+     into chain-integrity tests.
+  6. *"P1 survives adversity"* — environmental stress (gravity chains,
+     drowning, fire, RCON-induced death, starvation).
+- **New rule in novelty evaluation:** Rule 11 (Iteration file
+  completeness gate). If an iteration file is stubbed or missing a
+  required section, `final_score = 0` and it does not count toward
+  epic progress — even if the scenario ran.
+- **New procedural discipline:** resume checkpoint file at every 10th
+  iteration, so a hung or interrupted loop can restart cleanly.
+- **Expected new tools:** ≥10 from the capability-gap list. Each added
+  inside the iteration that requires it, not as a separate feature branch.
 
-### Future epochs (tentative)
+### Future epochs (tentative, unscoped)
 
-- **Epoch 3 — PVP / redstone / nether:** the advanced-gameplay surface
-  that epoch 2 explicitly deferred.
-- **Epoch 4 — Multi-agent (> 2 bots) coordination**.
-- **Epoch 5 — Performance & throughput**: latency budgets, concurrent
+- **Epoch 4 — PVP / redstone / Nether:** advanced-gameplay surface
+  deferred from Epoch 2.
+- **Epoch 5 — Multi-agent (>2 bots) coordination.**
+- **Epoch 6 — Performance & throughput:** latency budgets, concurrent
   session scaling.
-
-Future epochs are named for context; they are not currently scoped.
 
 ---
 
 ## Why this structure
 
-The core insight from epoch 1 was that **test quantity is not test
+The core insight from Epoch 1 was that **test quantity is not test
 quality**. 500 iterations produced 52 useful tests. The rest were noise
 that happened to pass a novelty check based on surface uniqueness.
 
-Epoch 2 fixes this with:
+Epoch 2 fixed most of that with thematic framing (gameplay epics),
+actor/observer separation (asymmetric roles), Rule 0 (atomic scope
+gate), the hard cap (forces honest exit), and the Options A/B/C/D
+incentive stack (reward finding bugs, not passing tests).
 
-1. **Thematic framing** — gameplay epics are what users actually do,
-   so failures map directly to user pain.
-2. **Actor/observer separation** — symmetric roles produce ambiguous
-   assertions; asymmetric roles make every test directional.
-3. **Rule 0 in novelty evaluation** — rejects iterations that bundle
-   too much together, forcing the loop to stay narrow.
-4. **Hard cap at 500** — forces the loop to exit, with or without full
-   coverage, so honest reporting replaces grinding.
+Epoch 2 revealed a new failure mode: iteration files can still collapse
+to stubs even when the novelty system accepts them. Epoch 3 closes that
+hole with Rule 11 (iteration-file completeness gate). It also adds
+procedural resume discipline so a hung loop is recoverable.
 
-If epoch 2 also produces a low retention ratio (say, <20%), that's
-itself a finding: it means the epics are too broad or the novelty
-rules still have a loophole. Each epoch produces a retrospective that
-informs the next.
+Each epoch produces a retrospective that informs the next. Failure
+modes are surfaced and addressed; the methodology improves monotonically.
 
 ---
 
@@ -121,7 +148,9 @@ informs the next.
 | What tools & resources exist | `README.md` § Current surface |
 | The testing methodology | `testing/novelty.md` |
 | The gameplay epics being tested | `testing/gameplay-epics.md` |
-| What epoch 1 tested and what broke | `testing/epoch-001-retrospective.md` |
+| What Epoch 1 tested and what broke | `testing/epoch-001-retrospective.md` |
+| What Epoch 2 tested and what broke | `opencode/epochs/epoch_002.md` (gitignored) |
+| What Epoch 3 will test | `opencode/epoch_3_spec.md` (gitignored) |
 | The deployment of the production bot | `opencode/context/MathInstance/spec.md` (gitignored) |
 | Every bug ever found by the testing loop | `opencode/issues.md` (gitignored) |
 | How to run a scenario yourself | `test/README.md`, `test/harness.md` |
@@ -130,9 +159,14 @@ Per `.gitignore`, everything under `opencode/` is local context — it
 is not committed to the repository. What IS committed is this spec,
 the `README.md`, the source tree in `src/`, the formal scenarios
 in `test/`, and the methodology documents in `testing/`. The
-testing artifacts (iteration files, COVERAGE.json, issues ledger)
-are deliberately kept separate so that the repo remains focused
-on the software under test, not the evolving testing methodology.
+testing artifacts (iteration files, COVERAGE.json, issues ledger,
+in-progress epoch specs) are deliberately kept separate so that the
+repo remains focused on the software under test, not the evolving
+testing methodology.
+
+A sanitized Epoch 2 retrospective will be promoted to
+`testing/epoch-002-retrospective.md` in a separate step, following
+the same pattern as Epoch 1.
 
 ---
 
@@ -145,17 +179,27 @@ casual observers do not need to read past this point.
 
 ---
 
-## Current focus — epoch 2
+## Current focus — Epoch 3
 
-**Run the loop until all 8 epics meet their minimum-progress
+**Run the loop until all 6 Epoch 3 epics meet their minimum-progress
 criteria OR the iteration counter hits 500, whichever is first. Do
 not stop between iterations. Do not expand scope beyond what the
 existing design commitments allow. DO NOT ATTEMPT TO COMPLETE AN
-EPIC IN A SINGLE ITERATION (see `opencode/novelty.md` § Rule 0).**
+EPIC IN A SINGLE ITERATION (see `opencode/novelty.md` § Rule 0).
+DO NOT ACCEPT STUB ITERATION FILES (see `opencode/novelty.md` §
+Rule 11).**
 
 Each iteration is atomic, numbered, and permanent. Each iteration's
 scenario file is stored in `opencode/iterations/NNN.md` (gitignored —
-local context, not committed code).
+local context, not committed code). Per Rule 11, each scenario file
+must contain all 7 required sections (frontmatter, fingerprint JSON,
+Scenario, Regression value, Why this might break, Run log, Final
+evidence) before the iteration counts toward epic progress.
+
+Every 10th iteration, update `opencode/iterations/RESUME.md` with
+the current epic, last completed iteration number, any in-flight
+work, and the next intended action — so that a hung or interrupted
+loop can be resumed cleanly.
 
 ---
 
@@ -319,7 +363,7 @@ If an iteration requires a tool or resource that doesn't yet exist:
 - Adding a capability does NOT require human approval unless it involves:
   (a) a new dependency, (b) a breaking schema change to an existing tool,
   (c) an architectural change to how bot/server/http.js interact, or
-  (d) a production-affecting change to `MathBridgeBot` on `nyx`. These are
+  (d) a production-affecting change to the deployed bot instance. These are
   escalations — see § Blocking.
 
 ---
@@ -457,11 +501,16 @@ Every file in `opencode/checkpoints/NNN.md` uses this template:
 
 ## Harness reminders
 
-- P1 on `127.0.0.1:18080`, P2 on `127.0.0.1:18081`. Usernames `MathTest-P1`,
-  `MathTest-P2`. Lockfiles at `/tmp/mathtest-p[12].lock`.
-- RCON at `callisto:25576`, password in `opencode/context/MathInstance/secrets.env`.
-- Math server is shared with live `MathBridgeBot` — use RCON to isolate test
-  state when possible (e.g., `/kill @e[type=!player,distance=..32]`).
+The deployment-specific values (test-bot ports, usernames, lockfile paths,
+RCON host/port, RCON password) live in `opencode/context/MathInstance/`
+(gitignored) and `test/harness.md`. Use those as the source of truth; do
+not hardcode them elsewhere.
+
+General operational rules:
+
+- The test environment is shared with a live production bot instance. Use
+  RCON to isolate test state when possible (e.g.,
+  `/kill @e[type=!player,distance=..32]`).
 - After each iteration, tear down test bots cleanly (kill processes, remove
   lockfiles) to avoid leaving stale connections.
 - Use RCON generously for setup/teardown. It's the agent's ground truth and
@@ -489,22 +538,23 @@ Violating any of these is automatic grounds for re-doing the fix.
 The loop stops the moment ONE of the following becomes true
 (whichever comes first):
 
-1. **Normal completion.** All 8 epoch-2 epics have met their
+1. **Normal completion.** All 6 Epoch 3 epics have met their
    minimum-progress criteria (≥ 15 accepted iterations each, with
-   ≥ 1 cross-source-oracle and ≥ 1 failure-path) AND the
-   bug-density gate has not been tripped in the most recent 20
-   iterations.
+   ≥ 1 cross-source-oracle, ≥ 1 failure-path, and ≥ 30% failure-path
+   ratio per epic) AND the bug-density gate has not been tripped in
+   the most recent 20 iterations.
 2. **Hard cap.** Iteration counter reaches **500**. The loop
    stops immediately regardless of remaining epic coverage. This
    exists to force an exit and prevent the noise-accumulation that
-   plagued epoch 1's final 350 iterations.
+   plagued Epoch 1's final 350 iterations.
 3. **Escalation.** A true blocker is hit as defined in § Blocking.
 
-On any exit, produce `opencode/epochs/epoch_002.md` applying
+On any exit, produce `opencode/epochs/epoch_003.md` applying
 retention rules to distill the epoch's keepers — including an honest
 accounting of which epics were satisfied, which were cut short, and
-which issues remain open. Then clear `opencode/iterations/` and
-`opencode/checkpoints/` for epoch 3.
+which issues remain open. Also copy `opencode/iterations/COVERAGE.json`
+to `opencode/epochs/epoch_003_coverage.json`. Then clear
+`opencode/iterations/` and `opencode/checkpoints/` for Epoch 4.
 
 ---
 
@@ -514,15 +564,26 @@ The initial tool surface (M1–M5) was built incrementally and all scenarios
 T1/T2/T3 passed. See prior git history for that earlier `SPEC.md` if needed.
 The current codebase has:
 
-- 18 tools (`chat`, `get_position`, `find_blocks`, `inspect_inventory`,
+- 19 tools (`chat`, `get_position`, `find_blocks`, `inspect_inventory`,
   `read_recent_chat`, `list_nearby_players`, `get_biome`, `look_at`,
   `look_at_player`, `get_health`, `list_nearby_entities`, `navigate_to`,
   `navigate_relative`, `get_time_of_day`, `get_weather`, `place_block`,
-  `dig_block`, `use_item`)
+  `dig_block`, `use_item`, `craft_item`). `craft_item` was added
+  during Epoch 2 to satisfy Epic 6 (P1 crafts a tool).
 - 6 resources (`minecraft://position|inventory|health|blocks/nearby|players/nearby|chat/recent`)
 - M4 safety: auto-respawn, fall protection, mob flee, health tracking
   (toggle via `--safe-mode`)
-- Deployed to `nyx` as `mcpmc-bridge.service`, connected to Discord via
-  OpenClaw
+- Issue-fix baseline: `dig_block` reach check (Issue #005),
+  pathfinder drain/setGoal-null fix (Issues #001, #002),
+  `craft_item` with nearby-crafting-table resolution (Issue #007).
+- Deployed to a production host running `MathBridgeBot` on the
+  public side of the bridge; connected to Discord via the gateway
+  layer. See `opencode/context/MathInstance/spec.md` for deployment
+  specifics.
 
-The robustness loop starts from this baseline.
+The Epoch 3 loop starts from this baseline. Expected new tools (from
+the Epoch 3 epics): `attack_entity`, `activate_block`, `equip_item`,
+`drop_item`, `open_container`, `take_item`, `deposit_item`,
+`close_container`, `eat`, `sleep`, `follow_player`. Each is added
+inside the iteration that requires it, per the missing-capability
+rule.

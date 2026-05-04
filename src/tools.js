@@ -286,6 +286,32 @@ export const TOOLS = Object.freeze([
       additionalProperties: false,
     },
   },
+  {
+    name: "craft_item",
+    description:
+      "Craft an item from materials in the bot's inventory. " +
+      "Uses the bot's 2x2 inventory grid for simple recipes, or requires a crafting table " +
+      "to be within reach for 3x3 recipes. " +
+      "Returns { ok, crafted, count, consumed }.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        itemName: {
+          type: "string",
+          description: "The item to craft, e.g. 'oak_planks', 'crafting_table', 'stick'.",
+        },
+        count: {
+          type: "integer",
+          minimum: 1,
+          maximum: 64,
+          default: 1,
+          description: "Number of items to craft (crafting happens in batches per recipe yield).",
+        },
+      },
+      required: ["itemName"],
+      additionalProperties: false,
+    },
+  },
 ]);
 
 // ---------- Zod schemas for argument validation ----------
@@ -361,6 +387,12 @@ export const SCHEMAS = Object.freeze({
     .strict(),
   use_item: z
     .object({ hand: z.enum(["right", "left"]).default("right") })
+    .strict(),
+  craft_item: z
+    .object({
+      itemName: z.string().min(1).max(64),
+      count: z.number().int().min(1).max(64).default(1),
+    })
     .strict(),
 });
 
@@ -507,6 +539,10 @@ export async function dispatch(name, rawArgs, bot) {
       const result = await bot.useItem({ hand: args.hand });
       return { content: [{ type: "text", text: JSON.stringify(result) }] };
     }
+    case "craft_item": {
+      const result = await bot.craftItem({ itemName: args.itemName, count: args.count });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }
     default:
       // Unreachable given assertCompleteness — still return a proper McpError rather than
       // a raw throw (the upstream mcpmc bug).
@@ -523,7 +559,7 @@ const DISPATCHED = new Set([
   "read_recent_chat", "list_nearby_players", "get_biome",
   "look_at", "look_at_player", "get_health", "list_nearby_entities",
   "navigate_to", "navigate_relative", "get_time_of_day", "get_weather",
-  "place_block", "dig_block", "use_item",
+  "place_block", "dig_block", "use_item", "craft_item",
 ]);
 
 export function assertCompleteness() {

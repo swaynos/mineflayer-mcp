@@ -918,6 +918,20 @@ export class Bot {
       );
     }
 
+    // Reach distance check: mineflayer sends the packet client-side and resolves
+    // via diggingCompleted without server confirmation. Offline-mode servers silently
+    // reject out-of-range digs, so we must check reach before calling bot.dig().
+    const eyeHeight = bot.entity.eyeHeight ?? 1.62;
+    const eyePos = origin.offset(0, eyeHeight, 0);
+    const blockCenter = targetPos.offset(0.5, 0.5, 0.5);
+    const reachDistance = eyePos.distanceTo(blockCenter);
+    if (reachDistance > 6) {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        `dig_block: block at offset (${dx},${dy},${dz}) is out of reach (${reachDistance.toFixed(1)} blocks away, max ~6)`
+      );
+    }
+
     try {
       await bot.dig(block);
       return { ok: true, dug: block.name, position: { x: targetPos.x, y: targetPos.y, z: targetPos.z } };
@@ -941,6 +955,116 @@ export class Bot {
     } catch (err) {
       if (err instanceof McpError) throw err;
       const n = normalizeError(err, `Minecraft: use_item (${handName}) failed`);
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  // ---------- M6: craft_item ----------
+
+  async craftItem({ itemName, count = 1 } = {}) {
+    this._assertSpawned();
+    const bot = this._bot;
+
+    // Look up the recipe by item name
+    const mcData = bot.registry;
+    const itemsByName = mcData?.itemsByName ?? {};
+    const blocksByName = mcData?.blocksByName ?? {};
+
+    // Try item first, then block (some craftable items are blocks)
+    const targetItem = itemsByName[itemName] ?? blocksByName[itemName];
+    if (!targetItem) {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        `craft_item: unknown item "${itemName}"`
+      );
+    }
+
+    // Find all recipes for this item — first check without table (2x2), then with table
+    // bot.recipesFor(id, null, count, craftingTable) returns recipes executable with given table
+    // When craftingTable is null, 3x3 recipes are excluded.
+
+    // First look for any nearby crafting table
+    let craftingTable = null;
+    const tableBlock = bot.findBlock({
+      matching: (block) => block.name === "crafting_table",
+      maxDistance: 4,
+    });
+    if (tableBlock) {
+      craftingTable = tableBlock;
+    }
+
+    // Try to find a craftable recipe
+    const allRecipes = bot.recipesFor(targetItem.id, null, 1, craftingTable);
+    if (!allRecipes || allRecipes.length === 0) {
+      // Also try without table to see if it's a materials issue
+      const recipesNoTable = bot.recipesAll
+        ? bot.recipesAll(targetItem.id, null, null)
+        : bot.recipesFor(targetItem.id, null, 1, null);
+      if (!recipesNoTable || recipesNoTable.length === 0) {
+        throw new McpError(
+          ErrorCodes.INVALID_PARAMS,
+          `craft_item: no recipe found for "${itemName}" — the item cannot be crafted`
+        );
+      }
+      // Recipe exists but cannot be crafted (insufficient materials or needs table)
+      const needsTable = recipesNoTable.some(r => r.requiresTable);
+      if (needsTable && !craftingTable) {
+        throw new McpError(
+          ErrorCodes.INVALID_PARAMS,
+          `craft_item: recipe for "${itemName}" requires a crafting table within 4 blocks`
+        );
+      }
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        `craft_item: insufficient materials to craft "${itemName}"`
+      );
+    }
+
+    // Prefer 2x2 (no crafting table) recipes, fall back to 3x3
+    const recipe = allRecipes[0];
+    const requiresTable = recipe.requiresTable ?? false;
+
+    // craftingTable was already found above (if needed)
+
+    // Record inventory before craft to compute consumed items
+    const invBefore = {};
+    for (const slot of bot.inventory.slots) {
+      if (slot) {
+        invBefore[slot.name] = (invBefore[slot.name] || 0) + slot.count;
+      }
+    }
+
+    try {
+      await bot.craft(recipe, count, craftingTable);
+
+      // Record inventory after craft
+      const invAfter = {};
+      for (const slot of bot.inventory.slots) {
+        if (slot) {
+          invAfter[slot.name] = (invAfter[slot.name] || 0) + slot.count;
+        }
+      }
+
+      // Compute what was consumed
+      const consumed = {};
+      for (const [name, beforeCount] of Object.entries(invBefore)) {
+        const afterCount = invAfter[name] || 0;
+        if (afterCount < beforeCount) {
+          consumed[name] = beforeCount - afterCount;
+        }
+      }
+
+      const craftedCount = (invAfter[itemName] || 0) - (invBefore[itemName] || 0);
+      return {
+        ok: true,
+        crafted: itemName,
+        count: craftedCount,
+        consumed,
+        requiresTable,
+      };
+    } catch (err) {
+      if (err instanceof McpError) throw err;
+      const n = normalizeError(err, `Minecraft: craft_item failed`);
       throw new McpError(n.code, n.message, n.data);
     }
   }
