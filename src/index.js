@@ -17,9 +17,9 @@ Usage:
                 [--lock <path>] [--log-level <level>] [--version <mcver>]
 
 Required:
-  --host <host>         Minecraft server host (e.g. callisto)
+  --host <host>         Minecraft server host (e.g. localhost)
   --port <port>         Minecraft server port (e.g. 1234)
-  --username <name>     Bot username (e.g. MathBridgeBot)
+  --username <name>     Bot username (e.g. my-bot)
 
 Optional:
   --lock <path>         Lockfile path (default /tmp/mathbridgebot.lock)

@@ -1,9 +1,9 @@
 {
   "name": "mineflayer-mcp",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "MCP server exposing a mineflayer bot to AI agents. Work in progress.",
+  "description": "MCP server exposing a mineflayer bot to AI agents. 30 tools covering the full casual survival-gameplay loop.",
   "engines": {
     "node": ">=22"
   },

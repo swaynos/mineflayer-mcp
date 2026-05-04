@@ -1,0 +1,27 @@
+# Local development Minecraft server.
+# Start with: docker compose -f docker-compose.dev.yaml up -d
+# Stop with:  docker compose -f docker-compose.dev.yaml down
+
+services:
+  minecraft:
+    image: itzg/minecraft-server:java21
+    container_name: mineflayer-mcp-dev
+    restart: unless-stopped
+    ports:
+      - "25565:25565"
+      - "25575:25575"   # RCON
+    environment:
+      EULA: "TRUE"
+      TYPE: "VANILLA"
+      VERSION: "1.21.1"
+      MEMORY: "2G"
+      ONLINE_MODE: "FALSE"
+      ENABLE_RCON: "TRUE"
+      RCON_PASSWORD: "mineflayer-dev"
+      RCON_PORT: "25575"
+      TZ: "UTC"
+    volumes:
+      - minecraft-data:/data
+
+volumes:
+  minecraft-data:

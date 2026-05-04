@@ -13,9 +13,9 @@ All values below come from
 
 | Value | Variable | Description |
 |---|---|---|
-| Minecraft host | — | `callisto` |
+| Minecraft host | — | `<MC_HOST>` |
 | Minecraft port | — | `1234` |
-| RCON host | `MATH_RCON_HOST` | `callisto` |
+| RCON host | `MATH_RCON_HOST` | `<MC_HOST>` |
 | RCON port | `MATH_RCON_PORT` | `25576` |
 | RCON password | `MATH_RCON_PASSWORD` | See `secrets.env` |
 | P1 username | — | `MathTest-P1` |
@@ -39,7 +39,7 @@ rm -f /tmp/mathtest-p1.lock /tmp/mathtest-p2.lock
 
 ```sh
 node src/http.js \
-  --host callisto --port 1234 \
+  --host <MC_HOST> --port 1234 \
   --username MathTest-P1 \
   --http-port 18080 --http-path /mcp --health-path /healthz \
   --lock /tmp/mathtest-p1.lock \
@@ -56,7 +56,7 @@ curl -sf http://127.0.0.1:18080/healthz   # → ok
 
 ```sh
 node src/http.js \
-  --host callisto --port 1234 \
+  --host <MC_HOST> --port 1234 \
   --username MathTest-P2 \
   --http-port 18081 --http-path /mcp --health-path /healthz \
   --lock /tmp/mathtest-p2.lock \
@@ -72,11 +72,11 @@ curl -sf http://127.0.0.1:18081/healthz   # → ok
 ### 4. Verify both bots are in the world
 
 ```sh
-ssh callisto "docker exec Math rcon-cli \
+ssh <MC_HOST> "docker exec Math rcon-cli \
   --host 127.0.0.1 --port 25575 \
   --password <MATH_RCON_PASSWORD> \
   'list'"
-# → There are 3 of a max of 20 players online: MathBridgeBot, MathTest-P1, MathTest-P2
+# → There are 3 of a max of 20 players online: ProductionBot, MathTest-P1, MathTest-P2
 ```
 
 All three should appear. If a test bot is missing, check its process logs
@@ -85,12 +85,12 @@ before proceeding.
 ### 5. Op the test bots
 
 ```sh
-ssh callisto "docker exec Math rcon-cli \
+ssh <MC_HOST> "docker exec Math rcon-cli \
   --host 127.0.0.1 --port 25575 \
   --password <MATH_RCON_PASSWORD> \
   '/op MathTest-P1'"
 
-ssh callisto "docker exec Math rcon-cli \
+ssh <MC_HOST> "docker exec Math rcon-cli \
   --host 127.0.0.1 --port 25575 \
   --password <MATH_RCON_PASSWORD> \
   '/op MathTest-P2'"
@@ -108,12 +108,12 @@ Always run teardown, even if the scenario fails.
 ### 1. Deop the test bots
 
 ```sh
-ssh callisto "docker exec Math rcon-cli \
+ssh <MC_HOST> "docker exec Math rcon-cli \
   --host 127.0.0.1 --port 25575 \
   --password <MATH_RCON_PASSWORD> \
   '/deop MathTest-P1'"
 
-ssh callisto "docker exec Math rcon-cli \
+ssh <MC_HOST> "docker exec Math rcon-cli \
   --host 127.0.0.1 --port 25575 \
   --password <MATH_RCON_PASSWORD> \
   '/deop MathTest-P2'"
@@ -133,7 +133,7 @@ rm -f /tmp/mathtest-p1.lock /tmp/mathtest-p2.lock
 ### 4. Confirm bots left the world
 
 ```sh
-ssh callisto "docker logs Math --since=30s 2>&1 | grep -E 'MathTest'"
+ssh <MC_HOST> "docker logs Math --since=30s 2>&1 | grep -E 'MathTest'"
 # → MathTest-P1 left the game
 # → MathTest-P2 left the game
 ```
@@ -145,7 +145,7 @@ ssh callisto "docker logs Math --since=30s 2>&1 | grep -E 'MathTest'"
 All RCON commands are run via:
 
 ```sh
-ssh callisto "docker exec Math rcon-cli \
+ssh <MC_HOST> "docker exec Math rcon-cli \
   --host 127.0.0.1 --port 25575 \
   --password <MATH_RCON_PASSWORD> \
   '<command>'"
@@ -170,16 +170,16 @@ Common commands used across scenarios:
 
 | Symptom | Likely cause | Action |
 |---|---|---|
-| Health endpoint never returns `ok` | Bot failed to connect to `callisto:1234` | Check `callisto` is reachable; check for macOS smoke-test bug (D-1) |
+| Health endpoint never returns `ok` | Bot failed to connect to `<MC_HOST>:1234` | Check `<MC_HOST>` is reachable; check for macOS smoke-test bug (D-1) |
 | Only 2 players in `list` | One test bot didn't connect | Check that bot's stderr for error; clear lock and retry |
-| RCON auth fails | Password rotated (happens on container recreate) | Re-read `secrets.env`; check `callisto:~/Documents/minecraft/Math/.rcon-cli.env` |
-| `MathBridgeBot` kicked | Duplicate-login (another production process started) | Check `nyx` systemd; this harness should not affect `MathBridgeBot` |
+| RCON auth fails | Password rotated (happens on container recreate) | Re-read `secrets.env`; check `<MC_HOST>:~/Documents/minecraft/Math/.rcon-cli.env` |
+| `ProductionBot` kicked | Duplicate-login (another production process started) | Check <BRIDGE_HOST> systemd; this harness should not affect `ProductionBot` |
 
 ---
 
 ## Chat noise
 
-P1 and P2 share the world with `MathBridgeBot`. Their public chat is visible
+P1 and P2 share the world with `ProductionBot`. Their public chat is visible
 to the Discord bridge and will appear in `#bot-minecraft`.
 
 - Use RCON (`/tell`) for harness-internal coordination — it does not flow

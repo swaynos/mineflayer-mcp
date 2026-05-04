@@ -11,7 +11,7 @@ import { McpError, ErrorCodes } from "./errors.js";
 export const TOOLS = Object.freeze([
   {
     name: "chat",
-    description: "Send a chat message in Minecraft as the MathBridgeBot.",
+    description: "Send a chat message in Minecraft as the bot.",
     inputSchema: {
       type: "object",
       properties: {
@@ -312,6 +312,222 @@ export const TOOLS = Object.freeze([
       additionalProperties: false,
     },
   },
+  {
+    name: "attack_entity",
+    description:
+      "Attack (hit) an entity by its numeric entity ID. " +
+      "The entity must be within reach (~4 blocks). " +
+      "Returns { ok, entityId, damageDealt }.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        entity_id: {
+          type: "integer",
+          description: "Numeric entity ID as reported by list_nearby_entities.",
+        },
+      },
+      required: ["entity_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "activate_block",
+    description:
+      "Right-click (activate) a block at a position relative to the bot's feet. " +
+      "Works on interactive blocks: doors, buttons, levers, chests, furnaces, etc. " +
+      "Returns { ok, blockName, position }.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        dx: { type: "integer", description: "X offset from bot feet position." },
+        dy: { type: "integer", description: "Y offset from bot feet position." },
+        dz: { type: "integer", description: "Z offset from bot feet position." },
+      },
+      required: ["dx", "dy", "dz"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "equip_item",
+    description:
+      "Equip a specific named item from the bot's inventory to hand or armor slot. " +
+      "Returns { ok, equipped, destination }.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Item name to equip, e.g. 'wooden_pickaxe', 'beef', 'diamond_chestplate'.",
+        },
+        destination: {
+          type: "string",
+          enum: ["hand", "off-hand", "head", "torso", "legs", "feet"],
+          default: "hand",
+          description: "Equip destination: 'hand' (default), 'off-hand', or armor slots.",
+        },
+      },
+      required: ["name"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "drop_item",
+    description:
+      "Drop a quantity of a named item from the bot's inventory on the ground. " +
+      "Returns { ok, dropped, count }.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Item name to drop, e.g. 'beef', 'sand', 'wooden_pickaxe'.",
+        },
+        count: {
+          type: "integer",
+          minimum: 1,
+          maximum: 64,
+          default: 1,
+          description: "Number of items to drop. Defaults to 1.",
+        },
+      },
+      required: ["name"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "open_container",
+    description:
+      "Open a container (chest, furnace, etc.) at a position relative to the bot's feet. " +
+      "Returns { ok, blockName, position, contents } where contents is the container's item list.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        dx: { type: "integer", description: "X offset from bot feet position." },
+        dy: { type: "integer", description: "Y offset from bot feet position." },
+        dz: { type: "integer", description: "Z offset from bot feet position." },
+      },
+      required: ["dx", "dy", "dz"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "take_item",
+    description:
+      "Take items from the currently-open container into the bot's inventory. " +
+      "Returns { ok, taken, count }.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Name of the item to take from the container.",
+        },
+        count: {
+          type: "integer",
+          minimum: 1,
+          maximum: 64,
+          default: 1,
+          description: "Number of items to take. Defaults to 1.",
+        },
+      },
+      required: ["name"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "deposit_item",
+    description:
+      "Deposit items from the bot's inventory into the currently-open container. " +
+      "Returns { ok, deposited, count }.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Name of the item to deposit into the container.",
+        },
+        count: {
+          type: "integer",
+          minimum: 1,
+          maximum: 64,
+          default: 1,
+          description: "Number of items to deposit. Defaults to 1.",
+        },
+      },
+      required: ["name"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "close_container",
+    description:
+      "Close the currently-open container. " +
+      "Returns { ok }.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "eat",
+    description:
+      "Consume the food item currently in the bot's hand (or find food in inventory and equip it). " +
+      "Returns { ok, consumed, foodBefore, foodAfter }.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        itemName: {
+          type: "string",
+          description: "Optional: name of food item to equip and eat. If omitted, eats whatever is in hand.",
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "sleep",
+    description:
+      "Attempt to sleep in the nearest bed. Only works at night or during thunderstorm. " +
+      "Returns { ok, slept, wokeAt } or error.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "follow_player",
+    description:
+      "Follow a named player, staying within a given distance. " +
+      "Runs until the leader stops for a set period or timeout. " +
+      "Returns { ok, followed, duration }.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        username: {
+          type: "string",
+          description: "Exact in-game username of the player to follow.",
+        },
+        distance: {
+          type: "number",
+          minimum: 1,
+          maximum: 32,
+          default: 2,
+          description: "Target following distance in blocks. Defaults to 2.",
+        },
+        timeoutMs: {
+          type: "integer",
+          minimum: 1000,
+          maximum: 120000,
+          default: 30000,
+          description: "Maximum follow duration in ms. Defaults to 30000.",
+        },
+      },
+      required: ["username"],
+      additionalProperties: false,
+    },
+  },
 ]);
 
 // ---------- Zod schemas for argument validation ----------
@@ -392,6 +608,55 @@ export const SCHEMAS = Object.freeze({
     .object({
       itemName: z.string().min(1).max(64),
       count: z.number().int().min(1).max(64).default(1),
+    })
+    .strict(),
+  attack_entity: z
+    .object({
+      entity_id: z.number().int(),
+    })
+    .strict(),
+  activate_block: z
+    .object({ dx: z.number().int(), dy: z.number().int(), dz: z.number().int() })
+    .strict(),
+  equip_item: z
+    .object({
+      name: z.string().min(1).max(64),
+      destination: z.enum(["hand", "off-hand", "head", "torso", "legs", "feet"]).default("hand"),
+    })
+    .strict(),
+  drop_item: z
+    .object({
+      name: z.string().min(1).max(64),
+      count: z.number().int().min(1).max(64).default(1),
+    })
+    .strict(),
+  open_container: z
+    .object({ dx: z.number().int(), dy: z.number().int(), dz: z.number().int() })
+    .strict(),
+  take_item: z
+    .object({
+      name: z.string().min(1).max(64),
+      count: z.number().int().min(1).max(64).default(1),
+    })
+    .strict(),
+  deposit_item: z
+    .object({
+      name: z.string().min(1).max(64),
+      count: z.number().int().min(1).max(64).default(1),
+    })
+    .strict(),
+  close_container: z.object({}).strict(),
+  eat: z
+    .object({
+      itemName: z.string().min(1).max(64).optional(),
+    })
+    .strict(),
+  sleep: z.object({}).strict(),
+  follow_player: z
+    .object({
+      username: z.string().min(1).max(64),
+      distance: z.number().min(1).max(32).default(2),
+      timeoutMs: z.number().int().min(1000).max(120000).default(30000),
     })
     .strict(),
 });
@@ -543,6 +808,54 @@ export async function dispatch(name, rawArgs, bot) {
       const result = await bot.craftItem({ itemName: args.itemName, count: args.count });
       return { content: [{ type: "text", text: JSON.stringify(result) }] };
     }
+    case "attack_entity": {
+      const result = await bot.attackEntity({ entity_id: args.entity_id });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }
+    case "activate_block": {
+      const result = await bot.activateBlock({ dx: args.dx, dy: args.dy, dz: args.dz });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }
+    case "equip_item": {
+      const result = await bot.equipItem({ name: args.name, destination: args.destination });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }
+    case "drop_item": {
+      const result = await bot.dropItem({ name: args.name, count: args.count });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }
+    case "open_container": {
+      const result = await bot.openContainer({ dx: args.dx, dy: args.dy, dz: args.dz });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }
+    case "take_item": {
+      const result = await bot.takeItem({ name: args.name, count: args.count });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }
+    case "deposit_item": {
+      const result = await bot.depositItem({ name: args.name, count: args.count });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }
+    case "close_container": {
+      const result = await bot.closeContainer();
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }
+    case "eat": {
+      const result = await bot.eat({ itemName: args.itemName });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }
+    case "sleep": {
+      const result = await bot.sleep();
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }
+    case "follow_player": {
+      const result = await bot.followPlayer({
+        username: args.username,
+        distance: args.distance,
+        timeoutMs: args.timeoutMs,
+      });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }
     default:
       // Unreachable given assertCompleteness — still return a proper McpError rather than
       // a raw throw (the upstream mcpmc bug).
@@ -559,7 +872,10 @@ const DISPATCHED = new Set([
   "read_recent_chat", "list_nearby_players", "get_biome",
   "look_at", "look_at_player", "get_health", "list_nearby_entities",
   "navigate_to", "navigate_relative", "get_time_of_day", "get_weather",
-  "place_block", "dig_block", "use_item", "craft_item",
+  "place_block", "dig_block", "use_item", "craft_item", "attack_entity",
+  "activate_block", "equip_item", "drop_item",
+  "open_container", "take_item", "deposit_item", "close_container",
+  "eat", "sleep", "follow_player",
 ]);
 
 export function assertCompleteness() {

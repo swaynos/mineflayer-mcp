@@ -33,7 +33,7 @@ independent observers confirm the result.
 ## Setup
 
 1. Choose a target coordinate on the surface, clear of obstructions, at
-   least 10 blocks from spawn to avoid interfering with `MathBridgeBot`.
+   least 10 blocks from spawn to avoid interfering with `ProductionBot`.
    Confirm the target block is currently air:
    ```
    /data get block <x> <y> <z>
@@ -90,7 +90,7 @@ Call via P2's MCP endpoint (`http://127.0.0.1:18081/mcp`):
 ## RCON verification
 
 ```sh
-ssh callisto "docker exec Math rcon-cli \
+ssh <MC_HOST> "docker exec Math rcon-cli \
   --host 127.0.0.1 --port 25575 \
   --password <MATH_RCON_PASSWORD> \
   'data get block <x> <y> <z>'"

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // scripts/smoke.js
-// Local smoke test: spawn our MCP server as a child and exercise all 4 tools.
+// Local smoke test: spawn our MCP server as a child and exercise all tools.
 // Prints PASS/FAIL per step and appends JSON-RPC exchanges to smoke.log.
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { appendFile, writeFile } from "node:fs/promises";
+import { appendFile, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,10 +13,25 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
 const LOG_PATH = path.join(REPO_ROOT, "smoke.log");
 
-const MC_HOST = process.env.MC_HOST || "callisto";
-const MC_PORT = process.env.MC_PORT || "1234";
-const MC_USER = process.env.MC_USER || "MathBridgeBot-Smoke";
-const LOCK = process.env.MC_LOCK || "/tmp/mathbridgebot-smoke.lock";
+// Load .env file if it exists (zero-dependency dotenv).
+try {
+  const envPath = path.join(REPO_ROOT, ".env");
+  const envContent = await readFile(envPath, "utf8");
+  for (const line of envContent.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIdx = trimmed.indexOf("=");
+    if (eqIdx < 0) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    const value = trimmed.slice(eqIdx + 1).trim();
+    if (!process.env[key]) process.env[key] = value;
+  }
+} catch { /* .env not required */ }
+
+const MC_HOST = process.env.MC_HOST || "localhost";
+const MC_PORT = process.env.MC_PORT || "25565";
+const MC_USER = process.env.MC_USERNAME || process.env.MC_USER || "mineflayer-smoke";
+const LOCK = process.env.LOCK_PATH || "/tmp/mineflayer-smoke.lock";
 
 const results = [];
 let exitCode = 0;

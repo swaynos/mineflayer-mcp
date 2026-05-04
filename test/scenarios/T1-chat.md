@@ -67,7 +67,7 @@ Call via P2's MCP endpoint (`http://127.0.0.1:18081/mcp`):
 ## RCON verification
 
 ```sh
-ssh callisto "docker logs Math --since=60s 2>&1 | grep '<MathTest-P1>'"
+ssh <MC_HOST> "docker logs Math --since=60s 2>&1 | grep '<MathTest-P1>'"
 ```
 
 Expected output contains:
@@ -104,7 +104,7 @@ blocks or entities required beyond stopping the bots and removing locks.
 - `read_recent_chat` does not exist yet. This scenario is a specification for
   the tool's expected interface, not a runnable test. Once the tool is built,
   run this scenario to validate it.
-- P1 and P2 share the chat stream with `MathBridgeBot`. If `MathBridgeBot`
+- P1 and P2 share the chat stream with `ProductionBot`. If `ProductionBot`
   or a human player sends a message between the invoker call and the tester
   read, those messages will appear in the buffer but should not affect the
   nonce assertion.

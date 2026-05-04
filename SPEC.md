@@ -15,7 +15,8 @@ through two complete testing epochs. All five original milestones
 (M1 observation, M2 movement, M3 world-write, M4 safety, M5 resources)
 are complete and deployed to production. The current public surface is:
 
-- **19 tools** (chat, navigation, observation, world-edit, crafting)
+- **30 tools** (chat, navigation, observation, world-edit, crafting, combat,
+  inventory management, survival, following)
 - **6 MCP resources** (read-only views of bot state)
 - **Runtime safety** (auto-respawn, fall protection, mob avoidance)
 
@@ -82,32 +83,22 @@ in `opencode/epochs/epoch_NNN.md`.
   (iteration-file completeness gate) to prevent this.
   Full diagnosis in `opencode/epochs/epoch_002.md`.
 
-### Epoch 3 — Interaction, resource flow, resilience (NEXT)
+### Epoch 3 — Interaction, resource flow, resilience (COMPLETE)
 
 - **Method:** same autonomous actor/observer loop, 6 new epics addressing
-  gaps from Epoch 2. Hard cap still 500 iterations. Novelty threshold
-  still 5/10. Same incentive stack (A/B/C/D) plus new Rule 11 gate.
-- **Epics:**
-  1. *"P1 interacts with animals and blocks"* — add `attack_entity`,
-     `activate_block`; test combat and interactive-block primitives.
-  2. *"P1 manages inventory explicitly"* — add `equip_item`, `drop_item`,
-     container tools (`open_container`, `take_item`, `deposit_item`,
-     `close_container`).
-  3. *"P1 eats, sleeps, survives"* — add `eat`, `sleep`; close survival
-     gameplay loop.
-  4. *"P1 follows P2"* — add `follow_player`; test continuous-behavior.
-  5. *"P1 runs a resource-flow loop"* — compose everything from epics 9–11
-     into chain-integrity tests.
-  6. *"P1 survives adversity"* — environmental stress (gravity chains,
-     drowning, fire, RCON-induced death, starvation).
-- **New rule in novelty evaluation:** Rule 11 (Iteration file
-  completeness gate). If an iteration file is stubbed or missing a
-  required section, `final_score = 0` and it does not count toward
-  epic progress — even if the scenario ran.
-- **New procedural discipline:** resume checkpoint file at every 10th
-  iteration, so a hung or interrupted loop can restart cleanly.
-- **Expected new tools:** ≥10 from the capability-gap list. Each added
-  inside the iteration that requires it, not as a separate feature branch.
+  gaps from Epoch 2.
+- **Outcome:** 100 iterations. All 6 epics met minimum criteria. **11 new
+  tools added** (attack_entity, activate_block, equip_item, drop_item,
+  open_container, take_item, deposit_item, close_container, eat, sleep,
+  follow_player). Tool surface grew 19 → 30.
+- **Bugs found:** 0 new issues filed. All 11 capability additions completed
+  within their iterations with fix_bonus applied. No new behavioral bugs
+  discovered — the existing codebase patterns (reach checks, error
+  normalization, assertCompleteness gate) held cleanly.
+- **Key strengthening:** Rule 11 (iteration file completeness gate) kept
+  file quality high. Resume checkpoints every 10 iterations enabled clean
+  termination. All failure-path ratios above 30%.
+- **Full retrospective:** `opencode/epochs/epoch_003.md` (gitignored).
 
 ### Future epochs (tentative, unscoped)
 
@@ -179,15 +170,18 @@ casual observers do not need to read past this point.
 
 ---
 
-## Current focus — Epoch 3
+## Current focus — between epochs
 
-**Run the loop until all 6 Epoch 3 epics meet their minimum-progress
-criteria OR the iteration counter hits 500, whichever is first. Do
-not stop between iterations. Do not expand scope beyond what the
-existing design commitments allow. DO NOT ATTEMPT TO COMPLETE AN
-EPIC IN A SINGLE ITERATION (see `opencode/novelty.md` § Rule 0).
-DO NOT ACCEPT STUB ITERATION FILES (see `opencode/novelty.md` §
-Rule 11).**
+**Epochs 1–3 are complete.** The tool surface is 30 tools with 6 MCP
+resources, validated through 752 total iterations across 3 testing epochs
+(500 + 152 + 100). The next epoch has not been scoped or started.
+
+The project is at a natural checkpoint: the casual survival-gameplay loop
+is fully covered (observe, move, build, mine, craft, interact with mobs
+and blocks, manage inventory, eat, sleep, follow a player). What comes
+next is either advanced gameplay (PVP, redstone, dimensions) or
+operational maturity (CI, npm publish, multi-bot scaling). That decision
+is pending human direction.
 
 Each iteration is atomic, numbered, and permanent. Each iteration's
 scenario file is stored in `opencode/iterations/NNN.md` (gitignored —
@@ -535,26 +529,23 @@ Violating any of these is automatic grounds for re-doing the fix.
 
 ## Loop termination
 
-The loop stops the moment ONE of the following becomes true
-(whichever comes first):
+When an epoch is active, the loop stops the moment ONE of the following
+becomes true (whichever comes first):
 
-1. **Normal completion.** All 6 Epoch 3 epics have met their
+1. **Normal completion.** All epics in the current epoch have met their
    minimum-progress criteria (≥ 15 accepted iterations each, with
    ≥ 1 cross-source-oracle, ≥ 1 failure-path, and ≥ 30% failure-path
    ratio per epic) AND the bug-density gate has not been tripped in
    the most recent 20 iterations.
 2. **Hard cap.** Iteration counter reaches **500**. The loop
-   stops immediately regardless of remaining epic coverage. This
-   exists to force an exit and prevent the noise-accumulation that
-   plagued Epoch 1's final 350 iterations.
+   stops immediately regardless of remaining epic coverage.
 3. **Escalation.** A true blocker is hit as defined in § Blocking.
 
-On any exit, produce `opencode/epochs/epoch_003.md` applying
-retention rules to distill the epoch's keepers — including an honest
-accounting of which epics were satisfied, which were cut short, and
-which issues remain open. Also copy `opencode/iterations/COVERAGE.json`
-to `opencode/epochs/epoch_003_coverage.json`. Then clear
-`opencode/iterations/` and `opencode/checkpoints/` for Epoch 4.
+On any exit, produce `opencode/epochs/epoch_NNN.md` applying
+retention rules to distill the epoch's keepers. Copy
+`opencode/iterations/COVERAGE.json` to
+`opencode/epochs/epoch_NNN_coverage.json`. Then clear
+`opencode/iterations/` and `opencode/checkpoints/` for the next epoch.
 
 ---
 
@@ -564,26 +555,25 @@ The initial tool surface (M1–M5) was built incrementally and all scenarios
 T1/T2/T3 passed. See prior git history for that earlier `SPEC.md` if needed.
 The current codebase has:
 
-- 19 tools (`chat`, `get_position`, `find_blocks`, `inspect_inventory`,
+- 30 tools (`chat`, `get_position`, `find_blocks`, `inspect_inventory`,
   `read_recent_chat`, `list_nearby_players`, `get_biome`, `look_at`,
   `look_at_player`, `get_health`, `list_nearby_entities`, `navigate_to`,
   `navigate_relative`, `get_time_of_day`, `get_weather`, `place_block`,
-  `dig_block`, `use_item`, `craft_item`). `craft_item` was added
-  during Epoch 2 to satisfy Epic 6 (P1 crafts a tool).
+  `dig_block`, `use_item`, `craft_item`, `attack_entity`, `activate_block`,
+  `equip_item`, `drop_item`, `open_container`, `take_item`, `deposit_item`,
+  `close_container`, `eat`, `sleep`, `follow_player`). `craft_item` was added
+  during Epoch 2; the remaining 11 interaction/inventory/survival tools were
+  added during Epoch 3.
 - 6 resources (`minecraft://position|inventory|health|blocks/nearby|players/nearby|chat/recent`)
 - M4 safety: auto-respawn, fall protection, mob flee, health tracking
   (toggle via `--safe-mode`)
 - Issue-fix baseline: `dig_block` reach check (Issue #005),
   pathfinder drain/setGoal-null fix (Issues #001, #002),
   `craft_item` with nearby-crafting-table resolution (Issue #007).
-- Deployed to a production host running `MathBridgeBot` on the
+- Deployed to a production host running the production bot on the
   public side of the bridge; connected to Discord via the gateway
   layer. See `opencode/context/MathInstance/spec.md` for deployment
   specifics.
 
-The Epoch 3 loop starts from this baseline. Expected new tools (from
-the Epoch 3 epics): `attack_entity`, `activate_block`, `equip_item`,
-`drop_item`, `open_container`, `take_item`, `deposit_item`,
-`close_container`, `eat`, `sleep`, `follow_player`. Each is added
-inside the iteration that requires it, per the missing-capability
-rule.
+The project is at the end of Epoch 3. All expected tools have been added.
+The next epoch is unscoped and pending human direction.

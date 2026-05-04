@@ -3,4 +3,5 @@ node_modules/
 /tmp/
 smoke.log
 .DS_Store
+.env
 opencode/

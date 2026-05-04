@@ -57,26 +57,24 @@ is auto-rejected with score 0.
 
 ---
 
-## Expected capability gaps
+## Expected capability gaps — status
 
-Before describing the epics, the gaps already anticipated in the current
-tool surface:
+These tools were identified as missing before the Epoch 2/3 testing campaigns.
+All high-priority gaps have been filled as of Epoch 3.
 
-| Missing capability | Epics that surface it | Priority |
-|---|---|---|
-| `craft_item` | 6 | High |
-| `attack_entity` | 5 | High |
-| `equip_item` by name | 2, 4, 5, 6 | High |
-| `eat` (or enhanced `use_item` with food semantics) | 5 | High |
-| `open_container` + `take_item` / `deposit_item` | 6 | Medium |
-| `drop_item` | 2, 8 | Medium |
-| `activate_block` (doors, buttons, levers) | 3 | Medium |
-| `follow_player` | 1, 7 | Medium |
-| `fish` | 5 | Low |
-| `sleep` (in bed) | 4 | Low |
-
-Per the missing-capabilities rule from epoch 1, these are added inside the
-iterations that require them — not as separate feature milestones.
+| Capability | Epics | Priority | Status |
+|---|---|---|---|
+| `craft_item` | 6 | High | ✅ Added (Epoch 2) |
+| `attack_entity` | 5 | High | ✅ Added (Epoch 3) |
+| `equip_item` by name | 2, 4, 5, 6 | High | ✅ Added (Epoch 3) |
+| `eat` | 5 | High | ✅ Added (Epoch 3) |
+| `open_container` + `take_item` / `deposit_item` | 6 | Medium | ✅ Added (Epoch 3) |
+| `drop_item` | 2, 8 | Medium | ✅ Added (Epoch 3) |
+| `activate_block` (doors, buttons, levers) | 3 | Medium | ✅ Added (Epoch 3) |
+| `follow_player` | 1, 7 | Medium | ✅ Added (Epoch 3) |
+| `close_container` | 6 | Medium | ✅ Added (Epoch 3) |
+| `sleep` (in bed) | 4 | Low | ✅ Added (Epoch 3) |
+| `fish` | 5 | Low | Not yet added |
 
 ---
 

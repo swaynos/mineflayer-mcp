@@ -31,12 +31,13 @@ advertised ten tools but dispatched only four, destroyed error codes via
 
 ## What works today
 
-All milestones M1–M5 complete as of 2026-05-03. The current `src/` implements a
-full-featured MCP server validated end-to-end against a live Minecraft 1.21.1
-server using the two-instance invoker/tester harness. See `SPEC.md` and `test/`
-for the full test methodology and evidence.
+All milestones M1–M5 complete plus three iterative testing epochs. The current
+`src/` implements a full-featured MCP server validated end-to-end against a live
+Minecraft 1.21.1 server using the two-instance actor/observer harness. The tool
+surface has grown to 30 tools across three epochs of gameplay-driven testing.
+See `SPEC.md` and `test/` for the full test methodology and evidence.
 
-### Tools (18)
+### Tools (30)
 
 | Tool | Description |
 |---|---|
@@ -58,6 +59,18 @@ for the full test methodology and evidence.
 | `place_block` | Place held item as block (mineflayer-native) |
 | `dig_block` | Break a block (mineflayer-native) |
 | `use_item` | Activate held item |
+| `craft_item` | Craft an item from materials in inventory |
+| `attack_entity` | Hit an entity (mob/player) within reach |
+| `activate_block` | Right-click an interactive block (door, button, lever) |
+| `equip_item` | Equip a named item to hand or armor slot |
+| `drop_item` | Drop N of a named item on the ground |
+| `open_container` | Open a chest, furnace, or other container block |
+| `take_item` | Withdraw items from an open container |
+| `deposit_item` | Deposit items into an open container |
+| `close_container` | Close the currently-open container |
+| `eat` | Consume the held food item |
+| `sleep` | Sleep in the nearest bed (night only, no hostiles) |
+| `follow_player` | Continuously follow a named player until timeout |
 
 ### Resources (6)
 
@@ -101,12 +114,21 @@ Key properties:
 
 ## What is missing
 
-The core tool and resource surface is complete. Remaining work:
+The core tool and resource surface covers the full casual survival-gameplay
+loop (observe, move, build, mine, craft, interact, eat, sleep, follow). What
+remains is operational maturity and advanced gameplay.
 
-**Testing**
-- CI test suite that runs against a throwaway Minecraft container.
-- Fix macOS smoke-test bug (D-1, minecraft-protocol handshake) so tests run locally without `nyx`.
+**Testing & CI**
+- CI test suite running against a throwaway Minecraft container.
+- Fix macOS smoke-test bug (minecraft-protocol handshake) for local dev.
 - Versioned tool schemas with a compatibility policy.
+
+**Advanced gameplay (future epochs)**
+- PVP combat mechanics.
+- Redstone interaction beyond simple levers/buttons.
+- Nether/End dimension support.
+- Multi-bot (>2) coordination.
+- Performance benchmarking and latency budgets.
 
 **Publishing**
 - Published npm package (`mineflayer-mcp`) with documented public API.
@@ -137,7 +159,7 @@ src/
   logger.js     JSON-line stderr logger
   lock.js       Single-instance PID lockfile
 scripts/
-  smoke.js      stdio end-to-end test (currently macOS-broken)
+  smoke.js      stdio end-to-end test
 test/
   README.md     Testing methodology — the agent IS the test harness
   harness.md    Reusable startup/teardown for two-bot scenarios
@@ -150,27 +172,94 @@ testing/
 
 ---
 
-## Local Development
+## Quick Start
+
+### 1. Start a Minecraft server
+
+The quickest path is the included Docker Compose file:
+
+```sh
+docker compose -f docker-compose.dev.yaml up -d
+```
+
+This starts a vanilla 1.21.1 server on `localhost:25565` with RCON
+enabled on port 25575 (password: `mineflayer-dev`). Wait until
+`docker logs mineflayer-mcp-dev` shows `Done (`.
+
+### 2. Configure
+
+Copy the example environment file:
+
+```sh
+cp .env.example .env
+```
+
+The defaults connect to `localhost:25565` — no changes needed if you're
+using the Docker Compose setup above. For a remote server, edit `.env`:
+
+```sh
+MC_HOST=my-server.example.com
+MC_PORT=25565
+MC_USERNAME=my-bot
+RCON_HOST=my-server.example.com
+RCON_PORT=25575
+RCON_PASSWORD=secret
+```
+
+### 3. Run
 
 ```sh
 npm install
 
-# stdio MCP against any Minecraft server
-node src/index.js --host <host> --port <port> --username <name>
+# stdio MCP (local dev / testing)
+node src/index.js --host localhost --port 25565 --username my-bot
+
+# HTTP MCP (production / gateway integration)
+node src/http.js --host localhost --port 25565 --username my-bot \
+  --http-port 8080 --http-path /mcp --health-path /healthz
 ```
 
-All logs go to **stderr** as JSON lines. Stdout carries only MCP JSON-RPC.
-
-### Smoke test
+### 4. Smoke test
 
 ```sh
 npm run smoke
 ```
 
-Exercises the current tool set end-to-end and writes the exchange to `smoke.log`.
+The smoke test reads `.env` if it exists, or falls back to
+`localhost:25565`.
 
-> Known issue: fails on macOS due to a minecraft-protocol handshake
-> discrepancy. Passes on Linux. Tracked as one of the first items to fix.
+---
+
+## Environment Variables
+
+All configuration can be provided via `.env` (gitignored) or as
+environment variables. CLI flags take precedence over env vars.
+
+| Variable | Default | Description |
+|---|---|---|
+| `MC_HOST` | `localhost` | Minecraft server hostname |
+| `MC_PORT` | `25565` | Minecraft server port |
+| `MC_USERNAME` | `mineflayer-bot` | Bot username |
+| `HTTP_PORT` | `8080` | HTTP MCP server port |
+| `HTTP_PATH` | `/mcp` | MCP endpoint path |
+| `HEALTH_PATH` | `/healthz` | Health check endpoint |
+| `RCON_HOST` | *(optional)* | RCON hostname (for test harness) |
+| `RCON_PORT` | *(optional)* | RCON port |
+| `RCON_PASSWORD` | *(optional)* | RCON password |
+| `SAFE_MODE` | `true` | Enable bot safety (auto-respawn, flee, fall protection) |
+| `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
+| `LOCK_PATH` | `/tmp/mineflayer-mcp.lock` | PID lockfile path |
+
+See `.env.example` for the full template with comments.
+
+---
+
+## Local Development
+
+All logs go to **stderr** as JSON lines. Stdout carries only MCP JSON-RPC.
+
+> Known issue: the stdio smoke test fails on macOS due to a
+> minecraft-protocol handshake discrepancy. Passes on Linux.
 
 ---
 

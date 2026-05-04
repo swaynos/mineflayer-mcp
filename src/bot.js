@@ -1069,6 +1069,508 @@ export class Bot {
     }
   }
 
+  // ---------- Epic 10: equip_item ----------
+
+  async equipItem({ name, destination = "hand" } = {}) {
+    this._assertSpawned();
+    const bot = this._bot;
+
+    // Find the item in inventory by name.
+    const items = bot.inventory.items();
+    const item = items.find((it) => it.name === name || it.displayName === name);
+    if (!item) {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        `equip_item: item "${name}" not found in inventory`
+      );
+    }
+
+    // Map destination to mineflayer's equip destination strings.
+    const destMap = {
+      "hand": "hand",
+      "off-hand": "off-hand",
+      "head": "head",
+      "torso": "torso",
+      "legs": "legs",
+      "feet": "feet",
+    };
+    const dest = destMap[destination] ?? "hand";
+
+    try {
+      await bot.equip(item, dest);
+      return {
+        ok: true,
+        equipped: item.name,
+        destination: dest,
+      };
+    } catch (err) {
+      if (err instanceof McpError) throw err;
+      const n = normalizeError(err, "Minecraft: equip_item failed");
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  // ---------- Epic 10: drop_item ----------
+
+  async dropItem({ name, count = 1 } = {}) {    this._assertSpawned();
+    const bot = this._bot;
+
+    // Find the item in inventory by name.
+    const items = bot.inventory.items();
+    const item = items.find((it) => it.name === name || it.displayName === name);
+    if (!item) {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        `drop_item: item "${name}" not found in inventory`
+      );
+    }
+
+    // Validate count against available quantity.
+    const dropCount = Math.max(1, Math.min(item.count, Number(count) || 1));
+    if (dropCount > item.count) {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        `drop_item: cannot drop ${dropCount} of "${name}" — only ${item.count} in inventory`
+      );
+    }
+
+    try {
+      // bot.toss(itemType, metadata, count) drops exactly N items.
+      await bot.toss(item.type, null, dropCount);
+      // Wait for the item entity to appear.
+      await new Promise((r) => setTimeout(r, 150));
+      return {
+        ok: true,
+        dropped: item.name,
+        count: dropCount,
+      };
+    } catch (err) {
+      if (err instanceof McpError) throw err;
+      const n = normalizeError(err, "Minecraft: drop_item failed");
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  // ---------- Epic 10: open_container / take_item / deposit_item / close_container ----------
+
+  // Container state: holds the open container window reference.
+  _openContainer = null;
+
+  async openContainer({ dx, dy, dz } = {}) {
+    this._assertSpawned();
+    const bot = this._bot;
+    const origin = bot.entity?.position;
+    if (!origin) throw new McpError(ErrorCodes.INTERNAL, "open_container: bot position not available");
+
+    // Close any existing open container first.
+    if (this._openContainer) {
+      try { this._openContainer.close(); } catch { /* ignore */ }
+      this._openContainer = null;
+    }
+
+    const { Vec3 } = await import("vec3");
+    const targetPos = new Vec3(
+      Math.floor(origin.x) + Number(dx),
+      Math.floor(origin.y) + Number(dy),
+      Math.floor(origin.z) + Number(dz)
+    );
+
+    const block = bot.blockAt(targetPos);
+    if (!block || block.name === "air" || block.name === "cave_air") {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        `open_container: no block at offset (${dx},${dy},${dz}) — found "${block?.name ?? "nothing"}"`
+      );
+    }
+
+    // Reach check.
+    const eyeHeight = bot.entity.eyeHeight ?? 1.62;
+    const eyePos = origin.offset(0, eyeHeight, 0);
+    const blockCenter = targetPos.offset(0.5, 0.5, 0.5);
+    const reachDistance = eyePos.distanceTo(blockCenter);
+    if (reachDistance > 5) {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        `open_container: block at offset (${dx},${dy},${dz}) is out of reach (${reachDistance.toFixed(1)} blocks away, max 5)`
+      );
+    }
+
+    try {
+      // Use bot.openBlock directly to avoid the constructor name check in bot.openContainer().
+      // bot.openContainer checks containerToOpen.constructor.name === 'Block' which can fail
+      // when Block is imported from a different module context.
+      const { Vec3 } = await import("vec3");
+      const direction = new Vec3(0, 1, 0);
+      const cursorPos = new Vec3(0.5, 0.5, 0.5);
+      const chest = await bot.openBlock(block, direction, cursorPos);
+      this._openContainer = chest;
+      // Read container contents.
+      const contents = chest.containerItems().map((item) => ({
+        name: item.name ?? null,
+        count: item.count ?? null,
+        slot: item.slot ?? null,
+        displayName: item.displayName ?? null,
+      }));
+      return {
+        ok: true,
+        blockName: block.name,
+        position: { x: targetPos.x, y: targetPos.y, z: targetPos.z },
+        contents,
+      };
+    } catch (err) {
+      this._openContainer = null;
+      if (err instanceof McpError) throw err;
+      const n = normalizeError(err, "Minecraft: open_container failed");
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  async takeItem({ name, count = 1 } = {}) {
+    this._assertSpawned();
+    if (!this._openContainer) {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        "take_item: no container is currently open — call open_container first"
+      );
+    }
+    const chest = this._openContainer;
+    const items = chest.containerItems();
+    const item = items.find((it) => it.name === name || it.displayName === name);
+    if (!item) {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        `take_item: item "${name}" not found in container`
+      );
+    }
+    const takeCount = Math.max(1, Math.min(item.count, Number(count) || 1));
+    try {
+      await chest.withdraw(item.type, null, takeCount);
+      return { ok: true, taken: item.name, count: takeCount };
+    } catch (err) {
+      if (err instanceof McpError) throw err;
+      const n = normalizeError(err, "Minecraft: take_item failed");
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  async depositItem({ name, count = 1 } = {}) {
+    this._assertSpawned();
+    if (!this._openContainer) {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        "deposit_item: no container is currently open — call open_container first"
+      );
+    }
+    const bot = this._bot;
+    const chest = this._openContainer;
+    // Find item in bot's inventory.
+    const items = bot.inventory.items();
+    const item = items.find((it) => it.name === name || it.displayName === name);
+    if (!item) {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        `deposit_item: item "${name}" not found in inventory`
+      );
+    }
+    const depositCount = Math.max(1, Math.min(item.count, Number(count) || 1));
+    try {
+      await chest.deposit(item.type, null, depositCount);
+      return { ok: true, deposited: item.name, count: depositCount };
+    } catch (err) {
+      if (err instanceof McpError) throw err;
+      const n = normalizeError(err, "Minecraft: deposit_item failed");
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  async closeContainer() {
+    this._assertSpawned();
+    if (!this._openContainer) {
+      // Already closed — not an error.
+      return { ok: true, closed: false };
+    }
+    try {
+      this._openContainer.close();
+      this._openContainer = null;
+      return { ok: true, closed: true };
+    } catch (err) {
+      this._openContainer = null;
+      if (err instanceof McpError) throw err;
+      const n = normalizeError(err, "Minecraft: close_container failed");
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  // ---------- Epic 11: eat ----------
+
+  async eat({ itemName } = {}) {
+    this._assertSpawned();
+    const bot = this._bot;
+
+    // If itemName specified, equip that food item first.
+    if (itemName) {
+      const items = bot.inventory.items();
+      const food = items.find((it) => it.name === itemName || it.displayName === itemName);
+      if (!food) {
+        throw new McpError(
+          ErrorCodes.INVALID_PARAMS,
+          `eat: food item "${itemName}" not found in inventory`
+        );
+      }
+      try {
+        await bot.equip(food, "hand");
+        await new Promise((r) => setTimeout(r, 100)); // Wait for inventory update
+      } catch (err) {
+        const n = normalizeError(err, "eat: equip failed");
+        throw new McpError(n.code, n.message, n.data);
+      }
+    }
+
+    // Check what's in hand — use the heldItem() API which is more reliable.
+    const handItem = bot.heldItem ?? bot.inventory?.slots?.[bot.quickBarSlot] ?? null;
+    if (!handItem || handItem.name === "air") {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        "eat: no food item in hand — equip a food item first or specify itemName"
+      );
+    }
+
+    const foodBefore = typeof bot.food === "number" ? bot.food : null;
+
+    try {
+      await bot.consume();
+      await new Promise((r) => setTimeout(r, 500));
+      const foodAfter = typeof bot.food === "number" ? bot.food : null;
+      return {
+        ok: true,
+        consumed: handItem.name,
+        foodBefore,
+        foodAfter,
+      };
+    } catch (err) {
+      if (err instanceof McpError) throw err;
+      const n = normalizeError(err, "Minecraft: eat failed");
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  // ---------- Epic 11: sleep ----------
+
+  async sleep() {    this._assertSpawned();
+    const bot = this._bot;
+
+    // Find nearest bed.
+    const BED_BLOCKS = [
+      "white_bed", "orange_bed", "magenta_bed", "light_blue_bed",
+      "yellow_bed", "lime_bed", "pink_bed", "gray_bed", "light_gray_bed",
+      "cyan_bed", "purple_bed", "blue_bed", "brown_bed", "green_bed",
+      "red_bed", "black_bed",
+    ];
+    const ids = [];
+    for (const bedName of BED_BLOCKS) {
+      const block = bot.registry?.blocksByName?.[bedName];
+      if (block && Number.isInteger(block.id)) ids.push(block.id);
+    }
+    const bedBlock = ids.length > 0 ? bot.findBlock({ matching: ids, maxDistance: 32 }) : null;
+    if (!bedBlock) {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        "sleep: no bed found within 32 blocks"
+      );
+    }
+
+    // Record time before sleep.
+    const timeBefore = bot.time?.timeOfDay ?? null;
+
+    try {
+      await bot.sleep(bedBlock);
+      await new Promise((r) => setTimeout(r, 2000));
+      const wokeAt = bot.time?.timeOfDay ?? null;
+      return { ok: true, slept: true, wokeAt };
+    } catch (err) {
+      if (err instanceof McpError) throw err;
+      const n = normalizeError(err, "Minecraft: sleep failed");
+      // Provide a readable error for common sleep failures.
+      const msg = String(err?.message ?? n.message);
+      if (msg.includes("daytime") || msg.includes("day") || msg.includes("not night")) {
+        throw new McpError(ErrorCodes.INVALID_PARAMS, "sleep: cannot sleep — it is daytime");
+      }
+      if (msg.includes("hostile") || msg.includes("monster")) {
+        throw new McpError(ErrorCodes.INVALID_PARAMS, "sleep: cannot sleep — hostile mobs nearby");
+      }
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  // ---------- Epic 9: attack_entity ----------
+
+  async attackEntity({ entity_id } = {}) {
+    this._assertSpawned();
+    const bot = this._bot;
+    const origin = bot.entity?.position;
+    if (!origin) throw new McpError(ErrorCodes.INTERNAL, "attack_entity: bot position not available");
+
+    // Find the entity by numeric ID in the loaded entity map.
+    const entity = bot.entities?.[entity_id];
+    if (!entity || !entity.position) {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        `attack_entity: entity with id ${entity_id} not found (not loaded or does not exist)`
+      );
+    }
+
+    // Reach distance check — attack range is ~4 blocks (creative: 5, survival: 3–4).
+    // Use 4.5 blocks as the threshold to be consistent with vanilla survival.
+    const dx = entity.position.x - origin.x;
+    const dy = entity.position.y - origin.y;
+    const dz = entity.position.z - origin.z;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (dist > 4.5) {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        `attack_entity: entity ${entity_id} is out of reach (${dist.toFixed(1)} blocks away, max 4.5)`
+      );
+    }
+
+    // Record health before attack (may be null for entities that don't track health).
+    const healthBefore = typeof entity.health === "number" ? entity.health : null;
+
+    try {
+      await bot.attack(entity);
+      // Small wait for server to process the damage packet.
+      await new Promise((r) => setTimeout(r, 100));
+
+      // Re-read entity health after attack (entity may have been updated in bot.entities).
+      const entityAfter = bot.entities?.[entity_id];
+      const healthAfter = entityAfter && typeof entityAfter.health === "number"
+        ? entityAfter.health
+        : null;
+
+      const damageDealt =
+        healthBefore !== null && healthAfter !== null
+          ? Math.max(0, healthBefore - healthAfter)
+          : null;
+
+      return {
+        ok: true,
+        entityId: entity_id,
+        damageDealt,
+      };
+    } catch (err) {
+      if (err instanceof McpError) throw err;
+      const n = normalizeError(err, "Minecraft: attack_entity failed");
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  // ---------- Epic 9: activate_block ----------
+
+  async activateBlock({ dx, dy, dz } = {}) {
+    this._assertSpawned();
+    const bot = this._bot;
+    const origin = bot.entity?.position;
+    if (!origin) throw new McpError(ErrorCodes.INTERNAL, "activate_block: bot position not available");
+
+    const { Vec3 } = await import("vec3");
+    const targetPos = new Vec3(
+      Math.floor(origin.x) + Number(dx),
+      Math.floor(origin.y) + Number(dy),
+      Math.floor(origin.z) + Number(dz)
+    );
+
+    const block = bot.blockAt(targetPos);
+    if (!block || block.name === "air" || block.name === "cave_air") {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        `activate_block: no block at offset (${dx},${dy},${dz}) — found "${block?.name ?? "nothing"}"`
+      );
+    }
+
+    // Reach check: activation range is ~4 blocks from eye to block center.
+    const eyeHeight = bot.entity.eyeHeight ?? 1.62;
+    const eyePos = origin.offset(0, eyeHeight, 0);
+    const blockCenter = targetPos.offset(0.5, 0.5, 0.5);
+    const reachDistance = eyePos.distanceTo(blockCenter);
+    if (reachDistance > 5) {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        `activate_block: block at offset (${dx},${dy},${dz}) is out of reach (${reachDistance.toFixed(1)} blocks away, max 5)`
+      );
+    }
+
+    try {
+      await bot.activateBlock(block);
+      // Small wait for server to process.
+      await new Promise((r) => setTimeout(r, 150));
+      return {
+        ok: true,
+        blockName: block.name,
+        position: { x: targetPos.x, y: targetPos.y, z: targetPos.z },
+      };
+    } catch (err) {
+      if (err instanceof McpError) throw err;
+      const n = normalizeError(err, "Minecraft: activate_block failed");
+      throw new McpError(n.code, n.message, n.data);
+    }
+  }
+
+  // ---------- Epic 12: follow_player ----------
+
+  // Track whether a follow is in progress.
+  _following = false;
+
+  async followPlayer({ username, distance = 2, timeoutMs = 30000 } = {}) {
+    this._assertSpawned();
+    const bot = this._bot;
+
+    if (this._following) {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        "follow_player: already following a player — call follow_player again to update target"
+      );
+    }
+
+    // Check that the player exists.
+    const player = bot.players?.[username];
+    if (!player) {
+      throw new McpError(
+        ErrorCodes.INVALID_PARAMS,
+        `follow_player: player "${username}" not found (not online or out of entity range)`
+      );
+    }
+
+    this._following = true;
+    const startTime = Date.now();
+
+    try {
+      // Ensure pathfinder is clean before starting.
+      try { bot.pathfinder.stop(); } catch { /* ignore */ }
+      try { bot.pathfinder.setGoal(null); } catch { /* ignore */ }
+      await new Promise((r) => setTimeout(r, 50));
+
+      const followGoal = new goals.GoalFollow(player.entity, Math.max(1, Number(distance) || 2));
+      // Set a dynamic GoalFollow — pathfinder will continuously re-path toward leader.
+      bot.pathfinder.setMovements(this._movements);
+      bot.pathfinder.setGoal(followGoal, true); // true = dynamic/continuous
+
+      // Wait for timeout, then stop following.
+      await new Promise((resolve) => setTimeout(resolve, timeoutMs));
+
+      const duration = Date.now() - startTime;
+      return { ok: true, followed: username, duration };
+    } catch (err) {
+      if (err instanceof McpError) throw err;
+      const n = normalizeError(err, "Minecraft: follow_player failed");
+      throw new McpError(n.code, n.message, n.data);
+    } finally {
+      this._following = false;
+      // Stop pathfinder.
+      try { bot.pathfinder.stop(); } catch { /* ignore */ }
+      try { bot.pathfinder.setGoal(null); } catch { /* ignore */ }
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+
   disconnect() {
     this._disconnected = true;
     if (this._safetyInterval) {
