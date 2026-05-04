@@ -102,11 +102,12 @@ in `opencode/epochs/epoch_NNN.md`.
 
 ### Future epochs (tentative, unscoped)
 
-- **Epoch 4 — PVP / redstone / Nether:** advanced-gameplay surface
-  deferred from Epoch 2.
-- **Epoch 5 — Multi-agent (>2 bots) coordination.**
-- **Epoch 6 — Performance & throughput:** latency budgets, concurrent
-  session scaling.
+- **Epoch 4 — Tool consolidation for nano-tier.** Collapse 30 tools
+  to ~9–12 behind action-enum dispatchers. Target: full tool surface
+  fits in ≤8k tokens. See `NORTH-STAR.md` for rationale.
+- **Epoch 5 — PVP / redstone / Nether:** advanced-gameplay surface.
+- **Epoch 6 — Multi-server split:** domain-specific MCP servers
+  with 3–6 tools each, composable at the agent runtime.
 
 ---
 
