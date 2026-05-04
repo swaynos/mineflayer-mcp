@@ -138,6 +138,14 @@ src/
   lock.js       Single-instance PID lockfile
 scripts/
   smoke.js      stdio end-to-end test (currently macOS-broken)
+test/
+  README.md     Testing methodology — the agent IS the test harness
+  harness.md    Reusable startup/teardown for two-bot scenarios
+  scenarios/    Formal T1/T2/T3 scenario specs
+testing/
+  novelty.md              Deterministic novelty scoring — 10-rule system
+  gameplay-epics.md       8 gameplay epics driving epoch 2 testing
+  epoch-001-retrospective.md  Honest post-mortem of the first 500 iterations
 ```
 
 ---

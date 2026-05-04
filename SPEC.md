@@ -119,19 +119,20 @@ informs the next.
 |---|---|
 | What the software does | `README.md` |
 | What tools & resources exist | `README.md` § Current surface |
-| The deployment of the production bot | `opencode/context/MathInstance/spec.md` |
-| What epoch 1 tested and what broke | `opencode/epochs/epoch_001.md` |
-| What epoch 2 will test | `opencode/epoch_2_spec.md` |
-| How novelty is evaluated | `opencode/novelty.md` |
-| Every bug ever found by the testing loop | `opencode/issues.md` |
+| The testing methodology | `testing/novelty.md` |
+| The gameplay epics being tested | `testing/gameplay-epics.md` |
+| What epoch 1 tested and what broke | `testing/epoch-001-retrospective.md` |
+| The deployment of the production bot | `opencode/context/MathInstance/spec.md` (gitignored) |
+| Every bug ever found by the testing loop | `opencode/issues.md` (gitignored) |
 | How to run a scenario yourself | `test/README.md`, `test/harness.md` |
 
 Per `.gitignore`, everything under `opencode/` is local context — it
 is not committed to the repository. What IS committed is this spec,
-the `README.md`, the source tree in `src/`, and the formal scenarios
-in `test/`. The testing artifacts are deliberately kept separate so
-that the repo remains focused on the software under test, not the
-evolving testing methodology.
+the `README.md`, the source tree in `src/`, the formal scenarios
+in `test/`, and the methodology documents in `testing/`. The
+testing artifacts (iteration files, COVERAGE.json, issues ledger)
+are deliberately kept separate so that the repo remains focused
+on the software under test, not the evolving testing methodology.
 
 ---
 
