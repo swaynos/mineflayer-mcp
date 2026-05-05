@@ -12,7 +12,8 @@
   },
   "scripts": {
     "start": "node src/index.js",
-    "smoke": "node scripts/smoke.js"
+    "smoke": "node scripts/smoke.js",
+    "nano:smoke": "node scripts/nano-smoke.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
