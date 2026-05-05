@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // scripts/nano-smoke.js
-// First-contact smoke test for gpt-5-nano + MCP over ngrok.
+// First-contact smoke test for gpt-5-nano + MCP over HTTP.
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -28,8 +28,9 @@ async function loadEnv() {
 }
 
 function usage() {
-  console.error("Usage: node scripts/nano-smoke.js <https://your-ngrok-host>");
-  console.error("Example: node scripts/nano-smoke.js https://abcd-1234.ngrok-free.app");
+  console.error("Usage: node scripts/nano-smoke.js <mcp-base-url-or-mcp-url>");
+  console.error("Example: node scripts/nano-smoke.js http://127.0.0.1:8080");
+  console.error("Example: node scripts/nano-smoke.js http://127.0.0.1:8080/mcp");
 }
 
 function normalizeBaseUrl(raw) {
@@ -37,12 +38,13 @@ function normalizeBaseUrl(raw) {
   try {
     u = new URL(raw);
   } catch {
-    throw new Error("Invalid ngrok URL (must be full https URL)");
+    throw new Error("Invalid URL (must be full http/https URL)");
   }
-  if (u.protocol !== "https:") {
-    throw new Error("ngrok URL must use https");
+  if (u.protocol !== "https:" && u.protocol !== "http:") {
+    throw new Error("URL must use http or https");
   }
-  u.pathname = "";
+  const hasMcpPath = u.pathname.endsWith("/mcp") || u.pathname === "/mcp";
+  u.pathname = hasMcpPath ? "/mcp" : "";
   u.search = "";
   u.hash = "";
   return u.toString().replace(/\/$/, "");
@@ -97,7 +99,7 @@ async function main() {
     console.error(String(err?.message ?? err));
     process.exit(2);
   }
-  const mcpUrl = `${baseUrl}/mcp`;
+  const mcpUrl = baseUrl.endsWith("/mcp") ? baseUrl : `${baseUrl}/mcp`;
 
   const payload = {
     model: "gpt-5-nano",

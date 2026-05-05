@@ -1,23 +1,21 @@
 # Test Harness
 
 Reusable instructions for every scenario run. Read this before executing any
-file in `scenarios/`. The harness is the same regardless of which scenario is
-being run — only the scenario steps change.
+file in `scenarios/`.
 
 ---
 
 ## Configuration
 
-All values below come from
-`opencode/context/MathInstance/secrets.env` (gitignored).
+All values come from local `.env` (gitignored).
 
 | Value | Variable | Description |
 |---|---|---|
-| Minecraft host | — | `<MC_HOST>` |
-| Minecraft port | — | `1234` |
-| RCON host | `MATH_RCON_HOST` | `<MC_HOST>` |
-| RCON port | `MATH_RCON_PORT` | `25576` |
-| RCON password | `MATH_RCON_PASSWORD` | See `secrets.env` |
+| Minecraft host | `MC_HOST` | usually `localhost` |
+| Minecraft port | `MC_PORT` | usually `25565` |
+| RCON host | `RCON_HOST` | usually `localhost` |
+| RCON port | `RCON_PORT` | usually `25575` |
+| RCON password | `RCON_PASSWORD` | local dev secret |
 | P1 username | — | `MathTest-P1` |
 | P2 username | — | `MathTest-P2` |
 | P1 MCP endpoint | — | `http://127.0.0.1:18080/mcp` |
@@ -29,100 +27,90 @@ All values below come from
 
 ## Startup
 
-### 1. Clear any stale locks
+### 1. Start local Minecraft server
+
+```sh
+docker compose -f docker-compose.dev.yaml up -d
+```
+
+Wait until logs show `Done (`:
+
+```sh
+docker logs mineflayer-mcp-dev --since=2m
+```
+
+### 2. Clear stale locks
 
 ```sh
 rm -f /tmp/mathtest-p1.lock /tmp/mathtest-p2.lock
 ```
 
-### 2. Start P1
+### 3. Start P1
 
 ```sh
 node src/http.js \
-  --host <MC_HOST> --port 1234 \
+  --host localhost --port 25565 \
   --username MathTest-P1 \
   --http-port 18080 --http-path /mcp --health-path /healthz \
   --lock /tmp/mathtest-p1.lock \
   --log-level debug
 ```
 
-Wait until the health endpoint responds before proceeding:
+Health check:
 
 ```sh
-curl -sf http://127.0.0.1:18080/healthz   # → ok
+curl -sf http://127.0.0.1:18080/healthz
 ```
 
-### 3. Start P2
+### 4. Start P2
 
 ```sh
 node src/http.js \
-  --host <MC_HOST> --port 1234 \
+  --host localhost --port 25565 \
   --username MathTest-P2 \
   --http-port 18081 --http-path /mcp --health-path /healthz \
   --lock /tmp/mathtest-p2.lock \
   --log-level debug
 ```
 
-Wait until healthy:
+Health check:
 
 ```sh
-curl -sf http://127.0.0.1:18081/healthz   # → ok
+curl -sf http://127.0.0.1:18081/healthz
 ```
 
-### 4. Verify both bots are in the world
+### 5. Verify both bots are in world
 
 ```sh
-ssh <MC_HOST> "docker exec Math rcon-cli \
+docker exec mineflayer-mcp-dev rcon-cli \
   --host 127.0.0.1 --port 25575 \
-  --password <MATH_RCON_PASSWORD> \
-  'list'"
-# → There are 3 of a max of 20 players online: ProductionBot, MathTest-P1, MathTest-P2
+  --password "$RCON_PASSWORD" \
+  "list"
 ```
 
-All three should appear. If a test bot is missing, check its process logs
-before proceeding.
-
-### 5. Op the test bots
+### 6. Op test bots (only for world-write scenarios)
 
 ```sh
-ssh <MC_HOST> "docker exec Math rcon-cli \
-  --host 127.0.0.1 --port 25575 \
-  --password <MATH_RCON_PASSWORD> \
-  '/op MathTest-P1'"
-
-ssh <MC_HOST> "docker exec Math rcon-cli \
-  --host 127.0.0.1 --port 25575 \
-  --password <MATH_RCON_PASSWORD> \
-  '/op MathTest-P2'"
+docker exec mineflayer-mcp-dev rcon-cli --host 127.0.0.1 --port 25575 --password "$RCON_PASSWORD" "/op MathTest-P1"
+docker exec mineflayer-mcp-dev rcon-cli --host 127.0.0.1 --port 25575 --password "$RCON_PASSWORD" "/op MathTest-P2"
 ```
-
-Only required for scenarios that involve world-write actions (T3+). Skip for
-T1 and T2.
 
 ---
 
 ## Teardown
 
-Always run teardown, even if the scenario fails.
+Always run teardown even on failures.
 
-### 1. Deop the test bots
+### 1. Deop test bots
 
 ```sh
-ssh <MC_HOST> "docker exec Math rcon-cli \
-  --host 127.0.0.1 --port 25575 \
-  --password <MATH_RCON_PASSWORD> \
-  '/deop MathTest-P1'"
-
-ssh <MC_HOST> "docker exec Math rcon-cli \
-  --host 127.0.0.1 --port 25575 \
-  --password <MATH_RCON_PASSWORD> \
-  '/deop MathTest-P2'"
+docker exec mineflayer-mcp-dev rcon-cli --host 127.0.0.1 --port 25575 --password "$RCON_PASSWORD" "/deop MathTest-P1"
+docker exec mineflayer-mcp-dev rcon-cli --host 127.0.0.1 --port 25575 --password "$RCON_PASSWORD" "/deop MathTest-P2"
 ```
 
 ### 2. Stop P1 and P2
 
-Send SIGTERM to each process (or Ctrl-C if running in foreground). The
-processes exit cleanly; mineflayer disconnects gracefully.
+Send SIGTERM or Ctrl-C where they are running.
 
 ### 3. Remove locks
 
@@ -130,38 +118,36 @@ processes exit cleanly; mineflayer disconnects gracefully.
 rm -f /tmp/mathtest-p1.lock /tmp/mathtest-p2.lock
 ```
 
-### 4. Confirm bots left the world
+### 4. Stop local Minecraft server (optional)
 
 ```sh
-ssh <MC_HOST> "docker logs Math --since=30s 2>&1 | grep -E 'MathTest'"
-# → MathTest-P1 left the game
-# → MathTest-P2 left the game
+docker compose -f docker-compose.dev.yaml down
 ```
 
 ---
 
 ## RCON reference
 
-All RCON commands are run via:
+Template:
 
 ```sh
-ssh <MC_HOST> "docker exec Math rcon-cli \
+docker exec mineflayer-mcp-dev rcon-cli \
   --host 127.0.0.1 --port 25575 \
-  --password <MATH_RCON_PASSWORD> \
-  '<command>'"
+  --password "$RCON_PASSWORD" \
+  "<command>"
 ```
 
-Common commands used across scenarios:
+Common commands:
 
 | Purpose | Command |
 |---|---|
-| List online players | `list` |
+| List players | `list` |
 | Get entity position | `data get entity @a[name=MathTest-P1,limit=1] Pos` |
 | Clear a region | `/fill x1 y1 z1 x2 y2 z2 minecraft:air` |
 | Place a block | `/setblock x y z minecraft:stone` |
-| Teleport a bot | `/tp MathTest-P1 x y z` |
+| Teleport bot | `/tp MathTest-P1 x y z` |
 | Kill nearby mobs | `/kill @e[type=!player,distance=..20]` |
-| Set time to day | `/time set day` |
+| Set day | `/time set day` |
 | Clear weather | `/weather clear` |
 
 ---
@@ -170,19 +156,7 @@ Common commands used across scenarios:
 
 | Symptom | Likely cause | Action |
 |---|---|---|
-| Health endpoint never returns `ok` | Bot failed to connect to `<MC_HOST>:1234` | Check `<MC_HOST>` is reachable; check for macOS smoke-test bug (D-1) |
-| Only 2 players in `list` | One test bot didn't connect | Check that bot's stderr for error; clear lock and retry |
-| RCON auth fails | Password rotated (happens on container recreate) | Re-read `secrets.env`; check `<MC_HOST>:~/Documents/minecraft/Math/.rcon-cli.env` |
-| `ProductionBot` kicked | Duplicate-login (another production process started) | Check <BRIDGE_HOST> systemd; this harness should not affect `ProductionBot` |
-
----
-
-## Chat noise
-
-P1 and P2 share the world with `ProductionBot`. Their public chat is visible
-to the Discord bridge and will appear in `#bot-minecraft`.
-
-- Use RCON (`/tell`) for harness-internal coordination — it does not flow
-  through the public chat stream.
-- Prefix any test chat that must go through the public channel with `[TEST]`.
-- Schedule test runs outside active Discord use where possible.
+| Health endpoint not `ok` | Bot failed to connect | Check local server is up; inspect bot stderr |
+| Only one test bot in `list` | One bot failed or lock conflict | Stop failed bot, clear lock, restart |
+| RCON auth fails | Wrong password in `.env` | Update `RCON_PASSWORD`, retry |
+| Frequent disconnects | Local resource contention | Increase Docker memory; close heavy workloads |

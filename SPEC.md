@@ -140,8 +140,8 @@ Target: ~15 prompts per epic → ~150 prompts total.
 | Fixture infeasible for some prompts | Drop or simplify at Phase B; flag in corpus review |
 | Judge bias toward particular answer shapes | Cross-check 10% of judgments with a second judge; investigate systematic disagreements |
 | nano fails systemically on first 20 | 20-prompt checkpoint exists specifically to catch this before full-cost commitment |
-| RCON fixtures disrupt MathBridgeBot | Pause MathBridgeBot (systemd stop `mcpmc-bridge`) before runs; resume after |
-| ngrok URL changes mid-run | One ngrok session per full run; if it drops the run is discarded |
+| Local fixture setup drifts between runs | Re-apply fixture + teardown per prompt; keep Docker world deterministic |
+| Local MCP endpoint mismatch | Use a single local HTTP MCP endpoint per run (`http://127.0.0.1:<port>/mcp`) and fail fast on health checks |
 | Full-scope cost overrun | Back-of-envelope: nano (~$0.05/prompt) + judge (~$0.10/prompt) × 150 ≈ $20–30 total. Acceptable |
 
 ### Environment requirements
@@ -151,7 +151,7 @@ New env vars needed (add to `.env`, add placeholders to `.env.example`):
 | Variable | Purpose |
 |---|---|
 | `OPENAI_API_KEY` | nano Responses API calls (already present) |
-| `NGROK_AUTH_TOKEN` | ngrok tunnel (already present) |
+| `EPOCH5_MCP_URL` | Local MCP endpoint for Epoch 5 runner (for example `http://127.0.0.1:8080/mcp`) |
 | `OPENAI_JUDGE_MODEL` | Judge model for `scripts/epoch5-judge.js` (default `gpt-5`) |
 | `OPENAI_BASE_URL` | Optional Responses API base URL override for local/testing gateways |
 | `RCON_HOST` | RCON for fixture setup/teardown |
@@ -224,5 +224,5 @@ Epoch 5 is complete when:
 | The judge rubric (Epoch 5) | `testing/nano-judging.md` |
 | Epoch 1 retrospective | `testing/epoch-001-retrospective.md` |
 | Epoch 5 retrospective | `testing/epoch-005-retrospective.md` (published post-epoch) |
-| Deployment specifics | `opencode/context/MathInstance/spec.md` (gitignored) |
+| Local deployment specifics | `opencode/context/local/spec.md` (gitignored) |
 | Every bug ever found | `opencode/issues.md` (gitignored) |
