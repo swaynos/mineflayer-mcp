@@ -69,7 +69,7 @@ usability failures.
 | World state | RCON-reset fixtures per prompt | Deterministic starting state; reproducible reruns |
 | Fixture complexity | Simple: tp + time/weather + inventory + nearby entity spawns | Achievable with RCON in <2s; no structure-building required |
 | Oracle | RCON + NanoOracleBot (independent observer bot) | Recovers actor/observer pattern for world-state assertions |
-| Scoring | Claude Opus as judge, temperature=0, fixed template | Captures nuanced intent fidelity that regex scoring cannot; different vendor from nano reduces same-family bias |
+| Scoring | OpenAI Responses judge (`OPENAI_JUDGE_MODEL`, default `gpt-5`) with fixed JSON template | Keeps Epoch 5 pipeline single-vendor and operationally simple while preserving structured rubric scoring |
 | Model | `gpt-5-nano` via OpenAI Responses API + `type: mcp` tool | The primary NORTH-STAR target |
 | Scope | Full 10 epics, ~150 prompts | Evidence at scale |
 | Checkpoint | Hard stop after first 20 judged prompts; review before full run | Catch systemic failures before committing full cost |
@@ -120,7 +120,7 @@ Target: ~15 prompts per epic → ~150 prompts total.
 | `scripts/epoch5-fixture-apply.js` | Apply a fixture JSON to the world via RCON |
 | `scripts/epoch5-fixture-teardown.js` | Return bot to clean baseline after a prompt |
 | `scripts/epoch5-run.js` | Main runner: fixture → nano call → trace capture |
-| `scripts/epoch5-judge.js` | Claude Opus judge: trace → scored judgment JSON |
+| `scripts/epoch5-judge.js` | OpenAI judge: trace → scored judgment JSON |
 | `scripts/epoch5-report.js` | Aggregate all runs + judgments into a summary report |
 
 ### Execution order
@@ -136,7 +136,7 @@ Target: ~15 prompts per epic → ~150 prompts total.
 
 | Risk | Mitigation |
 |---|---|
-| Corpus biased by generator's blind spots | Gemini is the corpus generator; Claude Opus is the judge — different model families reduce echo-chamber effects |
+| Corpus biased by generator's blind spots | Keep style diversity high and run periodic human spot-checks across epics to catch generator blind spots |
 | Fixture infeasible for some prompts | Drop or simplify at Phase B; flag in corpus review |
 | Judge bias toward particular answer shapes | Cross-check 10% of judgments with a second judge; investigate systematic disagreements |
 | nano fails systemically on first 20 | 20-prompt checkpoint exists specifically to catch this before full-cost commitment |
@@ -152,10 +152,29 @@ New env vars needed (add to `.env`, add placeholders to `.env.example`):
 |---|---|
 | `OPENAI_API_KEY` | nano Responses API calls (already present) |
 | `NGROK_AUTH_TOKEN` | ngrok tunnel (already present) |
-| `ANTHROPIC_API_KEY` | Claude Opus judge calls (new) |
+| `OPENAI_JUDGE_MODEL` | Judge model for `scripts/epoch5-judge.js` (default `gpt-5`) |
+| `OPENAI_BASE_URL` | Optional Responses API base URL override for local/testing gateways |
 | `RCON_HOST` | RCON for fixture setup/teardown |
 | `RCON_PORT` | RCON port |
 | `RCON_PASSWORD` | RCON password |
+
+### Implementation status (current)
+
+Implemented in-repo:
+
+- `scripts/epoch5-fixture-apply.js` and `scripts/epoch5-fixture-teardown.js`
+- `scripts/epoch5-run.js` (dry-run and live nano path)
+- `scripts/epoch5-judge.js` (dry-run and live OpenAI judge path)
+- `scripts/epoch5-report.js`
+- Epoch 5 docs: `testing/gameplay-epics-v2.md`, `testing/nano-judging.md`, `testing/epoch-005-retrospective.md`
+- Automated tests: `test/epoch5.test.js`
+
+Scope still remaining for Epoch 5 completion:
+
+1. Materialize full prompt corpus JSONs under `opencode/epoch5/corpus/` for all 10 epics.
+2. Execute the 20-prompt checkpoint run and review results before full-scale pass.
+3. Run full judged dataset (target ~150 prompts) and produce per-epic coverage of at least 10 judged prompts.
+4. Publish finalized `testing/epoch-005-retrospective.md` with findings and Epoch 6 recommendations.
 
 ### What "done" looks like
 

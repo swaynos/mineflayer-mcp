@@ -1,0 +1,10 @@
+{
+  "id": "E1-001",
+  "epic": "1",
+  "style": "smp",
+  "prompt": "yo where u at",
+  "expected_first_tool": "status",
+  "fixture": {
+    "time": "day"
+  }
+}
