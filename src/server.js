@@ -1,6 +1,9 @@
 // src/server.js
-// MCP Server wrapper. Registers ListTools, CallTool, ListResources, and ReadResource
-// handlers with strict error normalization so no plain-object throws ever leave this layer.
+// MCP Server wrapper using the consolidated 9-tool surface.
+// Drop-in replacement for server.js — same resource definitions,
+// same error normalization; tools come from tools.js.
+//
+// The same 6 MCP resources are exposed (they read from the same Bot methods).
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
@@ -14,10 +17,10 @@ import { TOOLS, dispatch, assertCompleteness } from "./tools.js";
 import { McpError, ErrorCodes, normalizeError } from "./errors.js";
 import { logger } from "./logger.js";
 
-// Re-run the structural guard at server construction (tools.js also runs it at import).
+// Re-run the structural guard at server construction.
 assertCompleteness();
 
-// ---------- Resource definitions ----------
+// ---------- Resource definitions (identical to server.js v1) ----------
 
 const RESOURCES = Object.freeze([
   {
@@ -68,7 +71,7 @@ export class McpMinecraftServer {
     this._server = new Server(
       {
         name: "minecraft-mcp",
-        version: "0.1.0",
+        version: "0.2.0",
       },
       {
         capabilities: {
@@ -124,7 +127,7 @@ export class McpMinecraftServer {
       }
     });
 
-    // ---------- Resources ----------
+    // ---------- Resources (identical logic to server.js v1) ----------
 
     server.setRequestHandler(ListResourcesRequestSchema, async () => {
       logger.debug("mcp.resources.list");

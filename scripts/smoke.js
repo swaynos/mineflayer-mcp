@@ -118,7 +118,7 @@ async function main() {
     await logExchange({ ts: new Date().toISOString(), event: "tools/list", result: listed });
     const names = (listed?.tools ?? []).map((t) => t.name).sort();
     // Verify assertCompleteness is doing its job: all tools have names, none are empty.
-    const valid = names.length >= 18 && names.every((n) => typeof n === "string" && n.length > 0);
+    const valid = names.length >= 9 && names.every((n) => typeof n === "string" && n.length > 0);
     if (valid) {
       pass("tools/list", `${names.length} tools registered`);
     } else {
@@ -144,58 +144,58 @@ async function main() {
     fail("tools/call chat", String(err?.message ?? err));
   }
 
-  // tools/call get_position
+  // tools/call observe (position)
   try {
-    const res = await client.callTool({ name: "get_position", arguments: {} });
-    await logExchange({ ts: new Date().toISOString(), event: "tools/call.get_position", result: res });
+    const res = await client.callTool({ name: "observe", arguments: { target: "position" } });
+    await logExchange({ ts: new Date().toISOString(), event: "tools/call.observe.position", result: res });
     const { parsed, text } = parseToolText(res);
     if (res.isError) {
-      fail("tools/call get_position", `server returned error: ${text}`);
+      fail("tools/call observe(position)", `server returned error: ${text}`);
     } else if (parsed && Number.isFinite(parsed.x) && Number.isFinite(parsed.y) && Number.isFinite(parsed.z)) {
-      pass("tools/call get_position", `x=${parsed.x} y=${parsed.y} z=${parsed.z}`);
+      pass("tools/call observe(position)", `x=${parsed.x} y=${parsed.y} z=${parsed.z}`);
     } else {
-      fail("tools/call get_position", `unexpected shape: ${text}`);
+      fail("tools/call observe(position)", `unexpected shape: ${text}`);
     }
   } catch (err) {
-    await logExchange({ ts: new Date().toISOString(), event: "tools/call.get_position.error", err: String(err?.message ?? err) });
-    fail("tools/call get_position", String(err?.message ?? err));
+    await logExchange({ ts: new Date().toISOString(), event: "tools/call.observe.position.error", err: String(err?.message ?? err) });
+    fail("tools/call observe(position)", String(err?.message ?? err));
   }
 
-  // tools/call find_blocks
+  // tools/call observe (blocks)
   try {
     const res = await client.callTool({
-      name: "find_blocks",
-      arguments: { blockTypes: ["stone", "dirt", "grass_block"], maxDistance: 16, maxCount: 3 },
+      name: "observe",
+      arguments: { target: "blocks", blockTypes: ["stone", "dirt", "sand"], maxDistance: 16, maxCount: 3 },
     });
-    await logExchange({ ts: new Date().toISOString(), event: "tools/call.find_blocks", result: res });
+    await logExchange({ ts: new Date().toISOString(), event: "tools/call.observe.blocks", result: res });
     const { parsed, text } = parseToolText(res);
     if (res.isError) {
-      fail("tools/call find_blocks", `server returned error: ${text}`);
+      fail("tools/call observe(blocks)", `server returned error: ${text}`);
     } else if (parsed && Array.isArray(parsed.blocks)) {
-      pass("tools/call find_blocks", `count=${parsed.count}`);
+      pass("tools/call observe(blocks)", `count=${parsed.count}`);
     } else {
-      fail("tools/call find_blocks", `unexpected shape: ${text}`);
+      fail("tools/call observe(blocks)", `unexpected shape: ${text}`);
     }
   } catch (err) {
-    await logExchange({ ts: new Date().toISOString(), event: "tools/call.find_blocks.error", err: String(err?.message ?? err) });
-    fail("tools/call find_blocks", String(err?.message ?? err));
+    await logExchange({ ts: new Date().toISOString(), event: "tools/call.observe.blocks.error", err: String(err?.message ?? err) });
+    fail("tools/call observe(blocks)", String(err?.message ?? err));
   }
 
-  // tools/call inspect_inventory
+  // tools/call inventory (inspect)
   try {
-    const res = await client.callTool({ name: "inspect_inventory", arguments: {} });
-    await logExchange({ ts: new Date().toISOString(), event: "tools/call.inspect_inventory", result: res });
+    const res = await client.callTool({ name: "inventory", arguments: { action: "inspect" } });
+    await logExchange({ ts: new Date().toISOString(), event: "tools/call.inventory.inspect", result: res });
     const { parsed, text } = parseToolText(res);
     if (res.isError) {
-      fail("tools/call inspect_inventory", `server returned error: ${text}`);
+      fail("tools/call inventory(inspect)", `server returned error: ${text}`);
     } else if (parsed && Array.isArray(parsed.items)) {
-      pass("tools/call inspect_inventory", `count=${parsed.count}`);
+      pass("tools/call inventory(inspect)", `count=${parsed.count}`);
     } else {
-      fail("tools/call inspect_inventory", `unexpected shape: ${text}`);
+      fail("tools/call inventory(inspect)", `unexpected shape: ${text}`);
     }
   } catch (err) {
-    await logExchange({ ts: new Date().toISOString(), event: "tools/call.inspect_inventory.error", err: String(err?.message ?? err) });
-    fail("tools/call inspect_inventory", String(err?.message ?? err));
+    await logExchange({ ts: new Date().toISOString(), event: "tools/call.inventory.inspect.error", err: String(err?.message ?? err) });
+    fail("tools/call inventory(inspect)", String(err?.message ?? err));
   }
 
   try { await client.close(); } catch { /* ignore */ }

@@ -31,46 +31,26 @@ advertised ten tools but dispatched only four, destroyed error codes via
 
 ## What works today
 
-All milestones M1–M5 complete plus three iterative testing epochs. The current
-`src/` implements a full-featured MCP server validated end-to-end against a live
-Minecraft 1.21.1 server using the two-instance actor/observer harness. The tool
-surface has grown to 30 tools across three epochs of gameplay-driven testing.
-See `SPEC.md` and `test/` for the full test methodology and evidence.
+All milestones M1–M5 complete, three iterative testing epochs passed, and a
+nano-tier consolidation refactor complete. The current `src/` exposes **9
+consolidated tools** that cover the full casual survival-gameplay loop
+(observe, move, build, mine, craft, interact, eat, sleep, follow) with a
+token footprint of ~1,600 tokens — well under the 8k budget for `gpt-5-nano`
+compatibility. See `SPEC.md` and `test/` for the full test methodology.
 
-### Tools (30)
+### Tools (9)
 
 | Tool | Description |
 |---|---|
-| `chat` | Send a chat message in-world |
-| `get_position` | Bot coordinates, dimension, yaw, pitch |
-| `find_blocks` | Locate nearby blocks by type |
-| `inspect_inventory` | List inventory contents |
-| `read_recent_chat` | Return buffered chat since a timestamp |
-| `list_nearby_players` | Players near the bot with positions |
-| `get_biome` | Biome at bot's current position |
-| `look_at` | Rotate head to face a coordinate |
-| `look_at_player` | Rotate head to face a named player |
-| `get_health` | Health, food, saturation |
-| `list_nearby_entities` | Entities with hostile flag and distance |
-| `navigate_to` | Pathfind to absolute coordinate |
-| `navigate_relative` | Pathfind by relative offset |
-| `get_time_of_day` | In-game time and phase |
-| `get_weather` | Current weather state |
-| `place_block` | Place held item as block (mineflayer-native) |
-| `dig_block` | Break a block (mineflayer-native) |
-| `use_item` | Activate held item |
-| `craft_item` | Craft an item from materials in inventory |
-| `attack_entity` | Hit an entity (mob/player) within reach |
-| `activate_block` | Right-click an interactive block (door, button, lever) |
-| `equip_item` | Equip a named item to hand or armor slot |
-| `drop_item` | Drop N of a named item on the ground |
-| `open_container` | Open a chest, furnace, or other container block |
-| `take_item` | Withdraw items from an open container |
-| `deposit_item` | Deposit items into an open container |
-| `close_container` | Close the currently-open container |
-| `eat` | Consume the held food item |
-| `sleep` | Sleep in the nearest bed (night only, no hostiles) |
-| `follow_player` | Continuously follow a named player until timeout |
+| `observe` | Read information about the world, the bot, or nearby entities. Use `target` param: position, health, world, players, entities, blocks, chat. |
+| `move` | Navigate to a location, look at a target, or follow a player. Use `mode` param: to, relative, look, look_at_player, follow. |
+| `chat` | Send a message in the Minecraft chat. |
+| `dig` | Break a block near the bot. |
+| `place` | Place a block from inventory at a nearby position. |
+| `attack` | Hit a nearby entity (mob or player). |
+| `use` | Use an item, activate a block, eat food, sleep, or craft. Use `action` param: item, block, eat, sleep, craft. |
+| `inventory` | Inspect, equip, drop, or manage container contents. Use `action` param: inspect, equip, drop, open, take, deposit, close. |
+| `status` | Quick self-check: position, health, and food in one call. |
 
 ### Resources (6)
 
