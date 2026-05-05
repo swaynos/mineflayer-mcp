@@ -6,5 +6,5 @@ smoke.log
 .env
 opencode/
 progress.txt
-spec.md
-SPEC.md
+# spec.md
+# SPEC.md
