@@ -4,6 +4,8 @@ This file is the implementation contract for `mineflayer-mcp`.
 `README.md` is the public face (what the software does); this file explains
 **what we are testing next and why the process looks the way it does**.
 
+Process and development workflow guidance lives in `CONTRIBUTING.md`.
+
 ---
 
 ## Where the project is, at a glance
@@ -217,6 +219,7 @@ Epoch 5 is complete when:
 | If you want to know... | Read... |
 |---|---|
 | What the software does | `README.md` |
+| How to develop changes | `CONTRIBUTING.md` |
 | What tools & resources exist | `README.md` § Current surface |
 | The testing methodology | `testing/novelty.md` |
 | The gameplay epics (Epochs 2–3) | `testing/gameplay-epics.md` |

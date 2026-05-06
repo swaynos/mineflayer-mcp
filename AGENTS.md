@@ -22,11 +22,23 @@ Operating rules for AI agents working in this repository.
   has explicitly asked for that specific action in that specific session.
 - When in doubt, stop and ask.
 
+
+## Required agent workflow
+
+1. Work from an explicit objective (`SPEC.md` for scoped implementation loops).
+2. Keep progress and verification evidence in `progress.txt` during execution.
+3. Run automated verification relevant to the change.
+4. Require peer review before declaring completion.
+
+For agent-driven loops, `@autonomous` is the builder and `@peer-review` is the
+required reviewer. Builder completion is blocked if peer review returns
+blocking findings. Agent definitions and role contracts live in
+`https://github.com/swaynos/cuddly-winner/tree/main/agents`.
+
 ## Tool usage policy
 
 This section is the authoritative permission policy for all agents working
-in this repository. There is no separate machine-readable config file —
-agents must read and apply these rules directly.
+in this repository.
 
 **Allowed without asking:**
 - `python3` / `python` — preferred tool for local file maintenance, RCON
@@ -56,5 +68,4 @@ agents must read and apply these rules directly.
 - When RCON fixture setup is needed, write a Python script that sends RCON
   commands directly over TCP using values from `.env` — this avoids needing
   `ssh` approval for fixture work.
-- For file operations in `/var/folders/` (the macOS temp dir used for
-  intermediate outputs), permission is pre-granted.
+- For file operations in `/tmp/`, permission is pre-granted.

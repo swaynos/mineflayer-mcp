@@ -1,304 +1,183 @@
 # mineflayer-mcp
 
-An [MCP](https://modelcontextprotocol.io/) server that exposes a
-[mineflayer](https://github.com/PrismarineJS/mineflayer) bot to AI agents.
+An [MCP](https://modelcontextprotocol.io/) server that gives AI agents a real
+[mineflayer](https://github.com/PrismarineJS/mineflayer) body in Minecraft.
 
-> **Project status: barebones.**
-> The current implementation works for a narrow set of tools against a specific
-> deployment, but it is not yet a general-purpose, high-quality MCP server. The
-> goal of this repo is to build one.
+Built for people who care about reliability, not demos: honest tool wiring,
+structured errors, safe bot lifecycle, and reproducible local testing.
 
----
+## Why this is worth your time
 
-## Goal
+- **Agent-ready surface:** 9 consolidated tools + 6 resources for real survival gameplay loops.
+- **No fake capabilities:** startup fails if advertised tools and dispatched tools diverge.
+- **Production-minded behavior:** one shared bot, single-instance lock, stdout-safe MCP transport.
+- **Local-first workflow:** Docker dev server + smoke tests + evaluation harness out of the box.
+- **Built for iteration:** clear `SPEC.md` contract and documented contributor/agent workflow.
 
-Produce a **high-quality, general-purpose mineflayer-mcp server** that AI agents
-can use to observe and act in any Minecraft world, with:
+## What problem this solves
 
-- A complete, honest tool surface (no ghost tools, no silent fallthroughs).
-- A resource surface for observable world state.
-- Robust error handling that never loses information to serialization.
-- Safe defaults for bot lifecycle (spawn/chunk-load gates, no reconnect storms).
-- Single-instance discipline (no duplicate-login kicks).
-- Equally viable as a local stdio server and as a deployed streamable-http service.
-- Documented, tested, and pluggable into any MCP-capable agent runtime.
+Many Minecraft agent projects break in predictable ways: advertised tools are
+not actually wired, errors collapse into unreadable blobs, reconnect logic
+thrashes servers, and logs corrupt MCP transport.
 
-This repo exists because the previous state-of-the-art (`@gerred/mcpmc@0.0.10`)
-advertised ten tools but dispatched only four, destroyed error codes via
-`String(error)`, and abandoned the project after one day of commits.
+`mineflayer-mcp` is designed to eliminate those failure modes:
 
----
+- Complete, honest tool surface (`assertCompleteness()` hard-fails mismatch).
+- Structured errors with preserved codes (`normalizeError()`).
+- Bot lifecycle gates before world reads (spawn/chunk safety).
+- Single-instance discipline (PID lock, no duplicate-login thrash).
+- One long-lived bot shared across MCP sessions for HTTP mode.
+- Works as local stdio MCP and streamable HTTP MCP.
 
-## What works today
+## Current surface
 
-All milestones M1–M5 complete, three iterative testing epochs passed, and a
-nano-tier consolidation refactor complete. The current `src/` exposes **9
-consolidated tools** that cover the full casual survival-gameplay loop
-(observe, move, build, mine, craft, interact, eat, sleep, follow) with a
-token footprint of ~1,600 tokens — well under the 8k budget for `gpt-5-nano`
-compatibility. See `SPEC.md` and `test/` for the full test methodology.
+The server currently exposes 9 consolidated tools and 6 read-only resources.
+The 9-tool surface is intentionally compact for nano-tier model compatibility.
+
+If you only read one thing before trying it: run the quick start, call
+`status`, then `observe` and `move`. You get immediate proof that the MCP loop,
+bot lifecycle, and world-state reads are all live.
 
 ### Tools (9)
 
-| Tool | Description |
+| Tool | What it does |
 |---|---|
-| `observe` | Read information about the world, the bot, or nearby entities. Use `target` param: position, health, world, players, entities, blocks, chat. |
-| `move` | Navigate to a location, look at a target, or follow a player. Use `mode` param: to, relative, look, look_at_player, follow. |
-| `chat` | Send a message in the Minecraft chat. |
-| `dig` | Break a block near the bot. |
-| `place` | Place a block from inventory at a nearby position. |
-| `attack` | Hit a nearby entity (mob or player). |
-| `use` | Use an item, activate a block, eat food, sleep, or craft. Use `action` param: item, block, eat, sleep, craft. |
-| `inventory` | Inspect, equip, drop, or manage container contents. Use `action` param: inspect, equip, drop, open, take, deposit, close. |
-| `status` | Quick self-check: position, health, and food in one call. |
+| `observe` | Read world/bot/entity/player/block/chat state |
+| `move` | Navigate, look, look at player, or follow player |
+| `chat` | Send a chat message |
+| `dig` | Break a nearby block |
+| `place` | Place a held block nearby |
+| `attack` | Attack a nearby entity by `entity_id` |
+| `use` | Use item/block, eat, sleep, or craft |
+| `inventory` | Inspect/equip/drop/open/take/deposit/close |
+| `status` | One-call position + health + food check |
 
 ### Resources (6)
 
-| URI | Content |
+| URI | Returns |
 |---|---|
 | `minecraft://position` | Bot coordinates |
-| `minecraft://inventory` | Current inventory |
-| `minecraft://health` | Health, food, saturation |
+| `minecraft://inventory` | Inventory snapshot |
+| `minecraft://health` | Health/food/saturation |
 | `minecraft://blocks/nearby` | Nearby block scan |
-| `minecraft://players/nearby` | Nearby player list |
+| `minecraft://players/nearby` | Nearby players |
 | `minecraft://chat/recent` | Recent chat buffer |
 
-### Scenarios passed
+## Quick start (local, recommended)
 
-| Scenario | What it proves |
-|---|---|
-| T1 — Chat | P1 sends; P2 observes via `read_recent_chat`; RCON confirms |
-| T2 — Presence | P1 navigates; P2 sees P1 in `list_nearby_players`; RCON confirms coords |
-| T3 — World-write | P1 places stone; P2 finds it via `find_blocks`; RCON confirms |
-
-### Bot safety (M4)
-
-With `--safe-mode` (default on):
-- Auto-respawn on death (`bot.on("death")` → `bot.respawn()`)
-- Fall protection (velocity-based jump)
-- Mob avoidance at health < 10 (pathfind away from nearest hostile)
-- Real-time health logging
-
-Validated: bot survived 5 minutes in a Husk-populated world, 1 death, auto-respawned.
-
-Key properties:
-
-- `assertCompleteness()` — fails startup if advertised tools ≠ dispatched tools.
-- `normalizeError()` — never returns `[object Object]`.
-- Spawn-gate and chunk-load-gate before world queries.
-- No auto-reconnect; process exits, systemd owns restart.
-- Single-instance PID lockfile.
-- Shared singleton bot across concurrent MCP sessions.
-
----
-
-## What is missing
-
-The core tool and resource surface covers the full casual survival-gameplay
-loop (observe, move, build, mine, craft, interact, eat, sleep, follow). What
-remains is operational maturity and advanced gameplay.
-
-**Testing & CI**
-- CI test suite running against a throwaway Minecraft container.
-- Fix macOS smoke-test bug (minecraft-protocol handshake) for local dev.
-- Versioned tool schemas with a compatibility policy.
-
-**Advanced gameplay (future epochs)**
-- PVP combat mechanics.
-- Redstone interaction beyond simple levers/buttons.
-- Nether/End dimension support.
-- Multi-bot (>2) coordination.
-- Performance benchmarking and latency budgets.
-
-**Publishing**
-- Published npm package (`mineflayer-mcp`) with documented public API.
-- Configurable via env vars in addition to CLI flags.
-
-**Docs**
-- Tool-by-tool reference with examples.
-- Agent-authoring guide: how to design prompts that use these tools well.
-- Deployment recipes for stdio, streamable-http, and behind a gateway.
-
-**Tool additions (future)**
-- Inventory actions: `equip_item`, `drop_item`, `craft_item`, `open_container`.
-- Extended observation: `list_nearby_items`, `get_block_info`.
-- Extended movement: `stop_navigation`, `follow_player`.
-
----
-
-## Project Structure
-
-```
-src/
-  index.js      CLI entrypoint — stdio MCP
-  http.js       HTTP entrypoint — streamable-http MCP
-  bot.js        Mineflayer wrapper: connect, spawn-gate, chunk-gate, operations
-  tools.js      TOOLS array, Zod schemas, dispatch(), assertCompleteness()
-  server.js     McpMinecraftServer with normalized error handling
-  errors.js     McpError, normalizeError(), ErrorCodes
-  logger.js     JSON-line stderr logger
-  lock.js       Single-instance PID lockfile
-scripts/
-  smoke.js      stdio end-to-end test
-test/
-  README.md     Testing methodology — the agent IS the test harness
-  harness.md    Reusable startup/teardown for two-bot scenarios
-  scenarios/    Formal T1/T2/T3 scenario specs
-testing/
-  novelty.md              Deterministic novelty scoring — 10-rule system
-  gameplay-epics.md       8 gameplay epics driving epoch 2 testing
-  epoch-001-retrospective.md  Honest post-mortem of the first 500 iterations
-```
-
----
-
-## Quick Start
-
-### 1. Start a Minecraft server
-
-The quickest path is the included Docker Compose file:
+### 1) Start the local Minecraft server
 
 ```sh
 docker compose -f docker-compose.dev.yaml up -d
 ```
 
-This starts a vanilla 1.21.1 server on `localhost:25565` with RCON
-enabled on port 25575 (password: `mineflayer-dev`). Wait until
-`docker logs mineflayer-mcp-dev` shows `Done (`.
+This starts a vanilla server on `localhost:25565` and RCON on `25575`.
 
-### 2. Configure
-
-Copy the example environment file:
-
-```sh
-cp .env.example .env
-```
-
-The defaults connect to `localhost:25565` — no changes needed if you're
-using the Docker Compose setup above. For a remote server, edit `.env`:
-
-```sh
-MC_HOST=my-server.example.com
-MC_PORT=25565
-MC_USERNAME=my-bot
-RCON_HOST=my-server.example.com
-RCON_PORT=25575
-RCON_PASSWORD=secret
-```
-
-### 3. Run
+### 2) Install dependencies and configure env
 
 ```sh
 npm install
-
-# stdio MCP (local dev / testing)
-node src/index.js --host localhost --port 25565 --username my-bot
-
-# HTTP MCP (production / gateway integration)
-node src/http.js --host localhost --port 25565 --username my-bot \
-  --http-port 8080 --http-path /mcp --health-path /healthz
+cp .env.example .env
 ```
 
-### 4. Smoke test
+Defaults are already set for local Docker. Edit `.env` only if you need a
+different host, username, or API settings.
+
+### 3) Run MCP server
+
+Stdio mode (best for local agent tooling):
+
+```sh
+node src/index.js --host localhost --port 25565 --username my-bot
+```
+
+HTTP mode (best for gateway/service integration):
+
+```sh
+node src/http.js --host localhost --port 25565 --username my-bot --http-port 8080 --http-path /mcp --health-path /healthz
+```
+
+### 4) Verify with smoke test
 
 ```sh
 npm run smoke
 ```
 
-The smoke test reads `.env` if it exists, or falls back to
-`localhost:25565`.
+## Configuration
 
----
+Use `.env` (gitignored) or environment variables. CLI flags override env vars.
 
-## Environment Variables
-
-All configuration can be provided via `.env` (gitignored) or as
-environment variables. CLI flags take precedence over env vars.
-
-| Variable | Default | Description |
+| Variable | Default | Purpose |
 |---|---|---|
-| `MC_HOST` | `localhost` | Minecraft server hostname |
-| `MC_PORT` | `25565` | Minecraft server port |
+| `MC_HOST` | `localhost` | Minecraft host |
+| `MC_PORT` | `25565` | Minecraft port |
 | `MC_USERNAME` | `mineflayer-bot` | Bot username |
-| `HTTP_PORT` | `8080` | HTTP MCP server port |
+| `HTTP_PORT` | `8080` | HTTP MCP port |
 | `HTTP_PATH` | `/mcp` | MCP endpoint path |
-| `HEALTH_PATH` | `/healthz` | Health check endpoint |
-| `RCON_HOST` | *(optional)* | RCON hostname (for test harness) |
+| `HEALTH_PATH` | `/healthz` | Health endpoint path |
+| `SAFE_MODE` | `true` | Auto-respawn + basic survival safety |
+| `LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error` |
+| `LOCK_PATH` | `/tmp/mineflayer-mcp.lock` | PID lockfile path |
+| `RCON_HOST` | *(optional)* | RCON host (tests/fixtures) |
 | `RCON_PORT` | *(optional)* | RCON port |
 | `RCON_PASSWORD` | *(optional)* | RCON password |
-| `SAFE_MODE` | `true` | Enable bot safety (auto-respawn, flee, fall protection) |
-| `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
-| `LOCK_PATH` | `/tmp/mineflayer-mcp.lock` | PID lockfile path |
 
-See `.env.example` for the full template with comments.
+For evaluation scripts, see `.env.example` for `EPOCH5_MCP_URL` and OpenAI
+judge settings.
 
----
+## Project map
 
-## Local Development
-
-All logs go to **stderr** as JSON lines. Stdout carries only MCP JSON-RPC.
-
-> Known issue: the stdio smoke test fails on macOS due to a
-> minecraft-protocol handshake discrepancy. Passes on Linux.
-
----
-
-## HTTP Entrypoint
-
-```sh
-node src/http.js \
-  --host <host> --port <port> --username <name> \
-  --http-port 8080 --http-path /mcp --health-path /healthz \
-  --lock /tmp/<name>.lock --log-level info --stateful
+```text
+src/
+  index.js      stdio MCP entrypoint
+  http.js       streamable HTTP MCP entrypoint
+  bot.js        mineflayer lifecycle + world operations
+  tools.js      tool schemas + dispatch + completeness checks
+  server.js     MCP server wiring + resource handlers
+  errors.js     error normalization + MCP error codes
+  logger.js     JSON-line stderr logger
+  lock.js       single-instance PID lock
+scripts/
+  smoke.js      end-to-end smoke test
+  epoch5-*.js   eval/fixture/judge/report pipeline
+test/
+  harness.md    local two-bot scenario harness
+  epoch5.test.js
+testing/
+  prompt-library.md
+  nano-judging.md
+  gameplay-epics-v2.md
 ```
 
-| Flag | Default | Description |
-|---|---|---|
-| `--host` | *(required)* | Minecraft server hostname |
-| `--port` | *(required)* | Minecraft server port |
-| `--username` | *(required)* | Bot username |
-| `--http-port` | `8080` | HTTP listening port |
-| `--http-path` | `/mcp` | MCP endpoint path |
-| `--health-path` | `/healthz` | Returns `ok` |
-| `--lock` | `/tmp/<name>.lock` | PID lockfile path |
-| `--log-level` | `info` | `debug` / `info` / `warn` / `error` |
-| `--stateful` / `--stateless` | stateful | Session mode |
+## Quality and testing
 
----
+- Smoke test (`npm run smoke`) validates end-to-end MCP + bot wiring.
+- Epoch 5 scripts support prompt-corpus evaluation against `gpt-5-nano`.
+- `test/epoch5.test.js` validates corpus/judging/reporting pipeline logic.
+- Workflow and review expectations are defined in `CONTRIBUTING.md`.
+
+## Docs and process
+
+- `README.md`: what the software does and how to run it.
+- `SPEC.md`: current implementation/testing contract.
+- `NORTH-STAR.md`: long-term direction.
+- `CONTRIBUTING.md`: shared builder workflow for humans and agents.
+- `AGENTS.md`: operational rules for AI agents in this repository.
 
 ## Requirements
 
-- **Node.js** 22.x (see `.nvmrc`).
-- **mineflayer** `^4.37.0` — required for 1.21.1+ (protodef 1.19).
-- **@modelcontextprotocol/sdk** `^1.0.0`.
-- **zod** `^3.23.8`.
-
----
-
-## Design Commitments
-
-These hold regardless of tool-surface growth:
-
-1. **No ghost tools.** `assertCompleteness()` is non-negotiable — the process
-   refuses to start if advertised tools and dispatched tools disagree.
-2. **Errors carry codes.** `normalizeError()` handles every throw shape and
-   never produces `[object Object]`.
-3. **Stdout is sacred.** MCP JSON-RPC only; logs go to stderr.
-4. **One bot, many sessions.** The HTTP entrypoint shares a single long-lived
-   mineflayer bot across concurrent MCP sessions — never spawn-per-session.
-5. **Lifecycle discipline.** No in-process auto-reconnect; exit and let the
-   supervisor restart. Prevents login-kick storms.
-6. **Tools do; resources observe.** Side effects go in tools, observable state
-   goes in resources.
-
----
+- Node.js 22+
+- Docker (for local Minecraft dev server)
 
 ## Contributing
 
-The roadmap is "What is missing" above. Pick any item, open a branch, and keep
-the six design commitments intact.
+Contributions are welcome. Start with `CONTRIBUTING.md`, then align active work
+to `SPEC.md`.
 
----
+## TL;DR
+
+If you want a serious starting point for Minecraft-capable agents, this repo is
+optimized for correctness, observability, and repeatable local development.
 
 ## License
 
