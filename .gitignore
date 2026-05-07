@@ -5,6 +5,5 @@ smoke.log
 .DS_Store
 .env
 opencode/
-progress.txt
-# spec.md
-# SPEC.md
+.eval/
+test/agent/.runs/

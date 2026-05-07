@@ -1,0 +1,11 @@
+## Current objective
+- [x] Ensure `npm run test:agent` executes (not skipped) and passes.
+
+## Plan
+- [x] Verify required services are running (Docker stack, MCP HTTP server, ngrok tunnel).
+- [x] Confirm environment variables resolve (`OPENAI_API_KEY`, `AGENT_MCP_URL` or ngrok fallback).
+- [x] Run `npm run test:agent` and iterate on failures until exit 0.
+
+## Verification snapshot
+- npm run test:agent -> exit 0
+- npm test -> exit 0

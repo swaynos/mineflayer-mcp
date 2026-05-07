@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "MCP server exposing a mineflayer bot to AI agents. 30 tools covering the full casual survival-gameplay loop.",
+  "description": "MCP server exposing a mineflayer bot to AI agents with a compact 9-tool surface.",
   "engines": {
     "node": ">=22"
   },
@@ -12,14 +12,9 @@
   },
   "scripts": {
     "start": "node src/index.js",
-    "smoke": "node scripts/smoke.js",
-    "nano:smoke": "node scripts/nano-smoke.js",
-    "epoch5:fixture:apply": "node scripts/epoch5-fixture-apply.js",
-    "epoch5:fixture:teardown": "node scripts/epoch5-fixture-teardown.js",
-    "epoch5:run": "node scripts/epoch5-run.js",
-    "epoch5:judge": "node scripts/epoch5-judge.js",
-    "epoch5:report": "node scripts/epoch5-report.js",
-    "test:epoch5": "node --test test/epoch5.test.js"
+    "start:http": "node src/http.js",
+    "test": "node --test --test-concurrency=1 test/world/*.test.js",
+    "test:agent": "node --test --test-concurrency=1 test/agent/*.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
