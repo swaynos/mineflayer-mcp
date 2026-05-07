@@ -1,25 +1,53 @@
 # SPEC.md
 
-Active workstream: two-layer quality model implementation.
+Active workstream: E1-E10 first-tool routing corpus (150 prompts).
 
 ## Objective
 
-Replace the previous three-layer test structure (unit/integration/stories)
-with a two-layer model:
+Add a new agent-routing evaluation corpus covering E1-E10 (150 prompts total)
+to `test/agent/`, and make it a required part of `npm run test:agent`.
 
-1. `test/world/` — deterministic live-world checks via real MCP client + real Minecraft.
-2. `test/agent/` — real LLM behavior under load with RCON-verified world outcomes.
+This workstream validates first-tool selection quality for:
+
+1. Status/observe routing
+2. Basic direct commands
+3. Contextual observation and entity/block/world targeting
+4. Multi-step intent first-action routing
+5. Ambiguity resolution and tension prompts
+6. Refusal boundaries where no tool call is expected
+
+## Scope decisions
+
+1. Corpus scope: all 150 prompts in one pass (E1-E10).
+2. Acceptance threshold: global first-tool accuracy >= 90%.
+3. E9 refusal contract: pass requires no tool call (response text can vary).
+4. E10 ambiguity policy: enforce listed expected first tool as ground truth.
+5. Fixture policy: include fixture-specific setup/assertions as mandatory.
+6. Determinism policy: pin model and decoding settings for corpus gate.
+7. Verification command: `npm run test:agent` is canonical.
+8. Retry policy: retries allowed until success, but must be bounded by an
+   implementation-defined cap/time limit to prevent non-terminating runs.
 
 ## Exit criteria
 
-1. `test/world/` contains 8 test files covering health, transports, observe, chat, move, dig/place, inventory/status.
-2. `test/agent/` contains 7 test files including session-soak with Option D failure budget.
-3. `npm test` runs `test/world/` and passes against the Docker stack.
-4. `npm run test:agent` runs `test/agent/` and skips cleanly without LLM env.
-5. All `EPOCH5_*` references removed from the codebase.
-6. `CONTRIBUTING.md`, `README.md`, `AGENTS.md` updated to reflect the two-layer model.
-7. No `test/unit/`, `test/integration/`, `test/stories/` directories.
+1. Corpus definitions for E1-E10 exist in `test/agent/` (150 prompts total),
+   with expected first tool metadata and fixture requirements.
+2. Test harness enforces fixed model + decoding settings for this corpus run.
+3. Test harness evaluates first-tool routing and computes global accuracy.
+4. Global corpus accuracy gate is enforced at >= 90% in CI/local runs.
+5. E9 prompts assert zero tool call on pass.
+6. E10 prompts assert exact match against listed expected first tool.
+7. Fixture setup/assertions are implemented and exercised for relevant prompts.
+8. Corpus execution is integrated into `npm run test:agent`.
+9. `README.md` and `test/agent/README.md` document corpus usage and gating.
+10. Validation passes with project workflow:
+    - `docker compose -f docker-compose.dev.yaml up -d`
+    - `npm run test:agent`
+
+## Plan artifact
+
+- Detailed gap-closure checklist is tracked in `test/agent/PLAN.md`.
 
 ## Status
 
-Complete. All exit criteria met.
+Planned. Implementation pending.

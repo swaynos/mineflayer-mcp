@@ -86,3 +86,8 @@ Two consecutive failures trigger a warning in the artifact but do not hard-fail 
 
 If the soak budget must be lowered to pass, that is a signal to investigate the
 failure pattern, not adjust the threshold. See `CONTRIBUTING.md`.
+## Corpus alignment plan
+
+- Gap closure and execution plan for E1-E10 is tracked in `test/agent/PLAN.md`.
+- This plan is the checklist for converting current epic-aligned suites to the exact 150-case corpus contract.
+
