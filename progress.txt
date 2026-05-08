@@ -1,11 +1,23 @@
-## Current objective
-- [x] Ensure `npm run test:agent` executes (not skipped) and passes.
+## Current state
+- npm run test:agent -> 14 pass, 2 fail (assertion-only, no skips)
+- E3 find-x: green
+- E7 entity-targeting: flaky (passes isolated, fails in full suite - observe over-fires on entity-verb prompts)
+- E9 refusal: green
+- move-to-place: green this run (separate stability track)
 
-## Plan
-- [x] Verify required services are running (Docker stack, MCP HTTP server, ngrok tunnel).
-- [x] Confirm environment variables resolve (`OPENAI_API_KEY`, `AGENT_MCP_URL` or ngrok fallback).
-- [x] Run `npm run test:agent` and iterate on failures until exit 0.
+## Remaining failures (next-loop candidates)
+1. entity-targeting (E7): 4/15 (26.7%) in full suite
+   - Dominant class: wrong tool - observe instead of attack/move/use
+   - All misses: entity-verb prompts (hit/kill/look at/chase/shoot/stare/punch/snipe/pet)
+   - Root cause: implied-goal rule fires observe when entities are nearby; entity-verb prompts need priority routing over observe
+   - Fix class: add explicit entity-verb -> action routing rule BEFORE implied-goal rule
 
-## Verification snapshot
-- npm run test:agent -> exit 0
-- npm test -> exit 0
+2. survival (E8): 2/15 (13.3%)
+   - Dominant class: wrong tool - observe/chat/status/inventory instead of move/use/attack
+   - Panic/urgency prompts not routing to immediate action
+   - Root cause: no urgency priority in routing; implied-goal and direct-action rules not covering panic patterns
+   - Fix class: add urgency/panic routing rule (RUN/help/burning/poisoned/drowning -> move or use immediately)
+
+## Next loop
+- Target E7 entity-targeting with explicit entity-verb priority rule
+- Promotion gate: 2 consecutive targeted passes + full suite regression check on E3/E9
